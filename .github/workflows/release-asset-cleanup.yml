@@ -114,20 +114,31 @@ jobs:
                       capture_output=True,
                   )
                   if result.returncode != 0:
-                      print(
+                      message = (
                           f"{policy.release}: unable to download latest manifests; "
-                          "no manifest references will be protected"
+                          "aborting cleanup so bundle protections are not bypassed"
                       )
-                      print(result.stderr.strip())
-                      return set()
+                      stderr = result.stderr.strip()
+                      if DRY_RUN:
+                          print(message)
+                          if stderr:
+                              print(stderr)
+                          return set()
+                      raise RuntimeError(f"{message}\n{stderr}")
 
                   referenced: set[str] = set()
                   for path in Path(tmp).glob("*.json"):
                       try:
                           payload = json.loads(path.read_text(encoding="utf-8"))
                       except (OSError, json.JSONDecodeError) as exc:
-                          print(f"{policy.release}: skipping unreadable manifest {path.name}: {exc}")
-                          continue
+                          message = (
+                              f"{policy.release}: unreadable latest manifest "
+                              f"{path.name}: {exc}"
+                          )
+                          if DRY_RUN:
+                              print(message)
+                              continue
+                          raise RuntimeError(message) from exc
                       bundle_name = str(payload.get("bundle_asset_name") or "").strip()
                       if bundle_name:
                           referenced.add(bundle_name)
