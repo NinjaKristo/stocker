@@ -35,8 +35,10 @@ jobs:
           import os
           import re
           import subprocess
+          import tempfile
           from collections import defaultdict
           from dataclasses import dataclass
+          from pathlib import Path
           from typing import Iterable
 
           REPO = os.environ["GITHUB_REPOSITORY"]
@@ -61,7 +63,7 @@ jobs:
               Policy(
                   release="weekly-reference-data",
                   keep=4,
-                  mode="assets",
+                  mode="dates",
                   patterns=(
                       re.compile(
                           r"^weekly-reference-(?P<market>[a-z]{2})-(?P<date>\d{8})-.+\.json\.gz$"
@@ -93,7 +95,49 @@ jobs:
               payload = gh_json(["release", "view", policy.release, "--json", "assets"])
               return payload.get("assets") or []
 
-          def plan_deletions(policy: Policy, assets: Iterable[dict]) -> list[dict]:
+          def manifest_referenced_assets(policy: Policy) -> set[str]:
+              with tempfile.TemporaryDirectory(prefix=f"{policy.release}-latest-") as tmp:
+                  result = subprocess.run(
+                      [
+                          "gh",
+                          "release",
+                          "download",
+                          policy.release,
+                          "--pattern",
+                          "*latest*.json",
+                          "--dir",
+                          tmp,
+                          "--repo",
+                          REPO,
+                      ],
+                      text=True,
+                      capture_output=True,
+                  )
+                  if result.returncode != 0:
+                      print(
+                          f"{policy.release}: unable to download latest manifests; "
+                          "no manifest references will be protected"
+                      )
+                      print(result.stderr.strip())
+                      return set()
+
+                  referenced: set[str] = set()
+                  for path in Path(tmp).glob("*.json"):
+                      try:
+                          payload = json.loads(path.read_text(encoding="utf-8"))
+                      except (OSError, json.JSONDecodeError) as exc:
+                          print(f"{policy.release}: skipping unreadable manifest {path.name}: {exc}")
+                          continue
+                      bundle_name = str(payload.get("bundle_asset_name") or "").strip()
+                      if bundle_name:
+                          referenced.add(bundle_name)
+                  return referenced
+
+          def plan_deletions(
+              policy: Policy,
+              assets: Iterable[dict],
+              protected_names: set[str],
+          ) -> list[dict]:
               grouped: dict[str, list[dict]] = defaultdict(list)
               preserved = 0
               for asset in assets:
@@ -142,6 +186,19 @@ jobs:
                       ]
                       kept = len(ordered) - len(market_deletions)
 
+                  protected_deletions = [
+                      item for item in market_deletions if item["name"] in protected_names
+                  ]
+                  if protected_deletions:
+                      print(
+                          f"{policy.release}: market={market} protected_by_latest_manifest="
+                          f"{len(protected_deletions)}"
+                      )
+                      market_deletions = [
+                          item for item in market_deletions if item["name"] not in protected_names
+                      ]
+                      kept = len(ordered) - len(market_deletions)
+
                   print(
                       f"{policy.release}: market={market} matched={len(ordered)} "
                       f"kept={kept} delete={len(market_deletions)}"
@@ -157,7 +214,9 @@ jobs:
           all_deletions: list[tuple[Policy, dict]] = []
           for policy in POLICIES:
               assets = list_assets(policy)
-              deletions = plan_deletions(policy, assets)
+              protected_names = manifest_referenced_assets(policy)
+              print(f"{policy.release}: protected_manifest_references={len(protected_names)}")
+              deletions = plan_deletions(policy, assets, protected_names)
               delete_bytes = sum(int(asset.get("size") or 0) for asset in deletions)
               print(
                   f"{policy.release}: planned_deletions={len(deletions)} "
