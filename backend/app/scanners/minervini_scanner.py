@@ -253,7 +253,8 @@ class MinerviniScanner(BaseStockScreener):
 
             # Pocket Pivot (Gil Morales / O'Neil): an up day whose volume
             # exceeds the largest down-day volume of the prior 10 sessions,
-            # with price holding above the 50-day MA.
+            # with price holding above the 50-day MA. Requires at least one
+            # prior down day — with none there is no down-volume to clear.
             pocket_pivot = None
             if len(prices_chrono) >= 12 and len(volumes_chrono) >= 12:
                 close_today = float(prices_chrono.iloc[-1])
@@ -263,12 +264,14 @@ class MinerviniScanner(BaseStockScreener):
                     for i in range(2, 12)
                     if float(prices_chrono.iloc[-i]) < float(prices_chrono.iloc[-i - 1])
                 ]
-                max_down_volume = max(prior_down_volumes) if prior_down_volumes else 0.0
-                pocket_pivot = bool(
-                    is_up_day
-                    and float(volumes_chrono.iloc[-1]) > max_down_volume
-                    and close_today >= ma_50
-                )
+                if not prior_down_volumes:
+                    pocket_pivot = False
+                else:
+                    pocket_pivot = bool(
+                        is_up_day
+                        and float(volumes_chrono.iloc[-1]) > max(prior_down_volumes)
+                        and close_today >= ma_50
+                    )
 
             # Power Trend (Minervini): close > 21-EMA, 21-EMA > 50-SMA,
             # 50-SMA rising, and 10+ consecutive closes above the 21-EMA.
