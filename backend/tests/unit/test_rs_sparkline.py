@@ -91,8 +91,11 @@ def test_all_inf_stock_returns_none_payload():
 
 
 def test_leading_nan_uses_first_finite_fill():
-    stock = pd.Series([float("nan")] * 5 + [50.0 + i * 0.1 for i in range(35)])
-    benchmark = pd.Series([4000.0 + i for i in range(40)])
+    # Build a 30-element series so the leading NaNs land inside the iloc[-30:]
+    # window the calculator slices — a longer series would push them out and
+    # leave the fill path untested.
+    stock = pd.Series([float("nan")] * 5 + [50.0 + i * 0.1 for i in range(25)])
+    benchmark = pd.Series([4000.0 + i for i in range(30)])
 
     result = RSSparklineCalculator().calculate_rs_sparkline(stock, benchmark)
 
@@ -100,6 +103,10 @@ def test_leading_nan_uses_first_finite_fill():
     assert len(result["rs_data"]) == 30
     for value in result["rs_data"]:
         assert math.isfinite(value)
+    # Leading NaN entries should be filled with the first finite RS ratio,
+    # which equals rs_ratio[0] after normalization → 1.0.
+    for value in result["rs_data"][:5]:
+        assert value == pytest.approx(1.0)
 
 
 def test_clean_input_still_produces_finite_normalized_series():
