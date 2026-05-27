@@ -224,7 +224,7 @@ Full reference: **[Environment Variables](docs/ENVIRONMENT.md)**
 
 **Backend:** FastAPI, SQLAlchemy, Alembic, Celery, Redis, PostgreSQL
 **Frontend:** React 18, Vite, Material-UI, TanStack Query / Table, Recharts
-**Data:** yfinance, Finviz, Alpha Vantage, SEC EDGAR, official X API (optional private xui override)
+**Data:** yfinance, Finviz, Alpha Vantage, SEC EDGAR, official X API (optional)
 
 ## Disclaimer
 

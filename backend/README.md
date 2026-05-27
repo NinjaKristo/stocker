@@ -41,26 +41,6 @@ redis-server
 
 Official X API ingestion is the default. Set `TWITTER_BEARER_TOKEN` in `.env` to enable it.
 
-To override the official API with the private xui package:
-
-```bash
-pip install git+ssh://git@github.com/xang1234/xui.git
-export X_INGEST_PROVIDER=xui
-```
-
-If you use the xui browser-session bridge, bootstrap its session state:
-
-```bash
-export XUI_CONFIG_PATH="${XUI_CONFIG_PATH:-$HOME/.stockscanner/xui-reader/config.toml}"
-xui config init --path "$XUI_CONFIG_PATH"
-xui profiles create default --path "$XUI_CONFIG_PATH"
-xui auth login --profile default --path "$XUI_CONFIG_PATH"
-
-# Optional (preferred for Google-linked X accounts):
-# In Themes -> Manage Sources, click "Connect From Current Browser"
-# after loading unpacked extension from ../browser-extension/xui-session-bridge.
-```
-
 ### 6. Start Celery Workers
 
 ```bash
@@ -164,7 +144,7 @@ Key files: `domain/feature_store/ports.py`, `domain/feature_store/models.py`, `i
 Two Celery queues prevent API rate limit violations:
 
 - **`celery`** queue: General compute tasks
-- **`data_fetch`** queue: External API calls and xui ingestion, kept conservatively serialized in Docker to avoid duplicate ingestion work and external rate-limit pressure
+- **`data_fetch`** queue: External API calls and content ingestion, kept conservatively serialized in Docker to avoid duplicate ingestion work and external rate-limit pressure
 
 | Task File | Description |
 |-----------|-------------|
@@ -196,7 +176,7 @@ For non-assistant workflows, the recommended provider path is Groq for research 
 
 ## Database
 
-The supported database is PostgreSQL in both local development and Docker deployments. The shared `./data` mount remains for non-database state such as `xui-reader` config/session data, caches, and the Celery beat schedule file.
+The supported database is PostgreSQL in both local development and Docker deployments. The shared `./data` mount holds non-database state such as caches and the Celery beat schedule file.
 
 ### Tables by Category
 

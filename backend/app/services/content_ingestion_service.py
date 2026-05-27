@@ -3,7 +3,7 @@ Content Ingestion Service for Theme Discovery
 
 Fetches content from multiple sources:
 - Substack RSS feeds
-- Twitter/X via official X API by default, or private xui override
+- Twitter/X via official X API by default, with pluggable provider override
 - News APIs (Benzinga, Seeking Alpha)
 - Reddit API
 """

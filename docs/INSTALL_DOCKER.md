@@ -2,7 +2,7 @@
 
 Docker is the supported deployment method for servers, homelabs, and VPS hosting. The project uses a layered Docker Compose architecture with composable overlays for different scenarios.
 
-Docker deployments use **PostgreSQL** as the application database. The shared `./data` mount handles non-database state (xui-reader config, Celery beat schedule, caches).
+Docker deployments use **PostgreSQL** as the application database. The shared `./data` mount handles non-database state (Celery beat schedule, caches).
 
 ## Prerequisites
 

@@ -265,7 +265,7 @@ const BASE_PATH = '/api/v1/user-themes';
 **CRITICAL: Database Location**
 - **Supported database**: PostgreSQL referenced by `DATABASE_URL`
 - `docker-data/postgres/` holds the Docker Postgres data directory
-- `data/` remains for non-database state such as xui-reader config, caches, backups, and Celery beat state
+- `data/` remains for non-database state such as caches, backups, and Celery beat state
 - If you see an empty database or missing data, verify `DATABASE_URL` points to the intended PostgreSQL instance
 
 **Persistent data paths:**

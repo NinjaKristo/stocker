@@ -96,19 +96,7 @@ class Settings(BaseSettings):
     x_ingest_provider: str = "official"  # official or xui
     x_api_max_pages_per_source: int = 10
     x_api_max_results_per_page: int = 50
-    xui_enabled: bool = False  # Browser-driven X ingestion is opt-in for local runtimes
-    xui_config_path: str = str(_PROJECT_ROOT / "data" / "xui-reader" / "config.toml")
-    xui_profile: str = "default"
     xui_limit_per_source: int = 50
-    xui_new_only: bool = True
-    xui_checkpoint_mode: str = "auto"
-    xui_bridge_enabled: bool = False
-    xui_bridge_allowed_origins: str = (
-        "http://localhost:80,http://127.0.0.1:80,"
-        "http://localhost:5173,http://127.0.0.1:5173"
-    )
-    xui_bridge_challenge_ttl_seconds: int = 120
-    xui_bridge_max_cookies: int = 300
     twitter_request_delay: float = 5.0  # Delay between twitter source fetches (seconds)
     benzinga_api_key: str = ""  # For Benzinga news API (optional)
     tavily_api_key: str = ""  # For web search (primary)

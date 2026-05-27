@@ -27,7 +27,6 @@ from ...theme_platform.content_browser_queries import (
 from .themes_content_pipeline import router as content_pipeline_router
 from .themes_content_pipeline import get_pipeline_observability
 from .themes_content_sources import router as content_sources_router
-from .themes_content_sources import XUISessionBridgeService
 from .themes_common import (
     detect_source_type_from_url,
     resolve_source_ids_for_pipeline as _resolve_source_ids_for_pipeline,

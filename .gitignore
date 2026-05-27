@@ -45,9 +45,7 @@ frontend/public/static-data/
 data/.cache/*
 data/db_repair_backup_*/
 data/*.recovered_*
-data/xui-reader/**/storage_state.json
-data/xui-reader/**/*.sqlite
-data/xui-reader/**/*.sqlite3
+data/xui-reader/
 data/hermes/
 data/backups/
 docker-data/

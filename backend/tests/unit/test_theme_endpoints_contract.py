@@ -26,13 +26,6 @@ def test_theme_openapi_contract_includes_merge_rankings_candidates_and_relations
     strict_wave_path, strict_wave_ops = _find_path(paths, "/themes/merge-wave/strict-auto")
     manual_wave_path, manual_wave_ops = _find_path(paths, "/themes/merge-wave/manual-review")
     relationship_graph_path, relationship_graph_ops = _find_path(paths, "/themes/relationship-graph")
-    twitter_session_path, twitter_session_ops = _find_path(paths, "/themes/twitter/session")
-    twitter_session_challenge_path, twitter_session_challenge_ops = _find_path(
-        paths, "/themes/twitter/session/challenge"
-    )
-    twitter_session_import_path, twitter_session_import_ops = _find_path(
-        paths, "/themes/twitter/session/import"
-    )
 
     assert rankings_path.endswith("/themes/rankings")
     assert merge_path.endswith("/themes/merge-suggestions")
@@ -43,9 +36,12 @@ def test_theme_openapi_contract_includes_merge_rankings_candidates_and_relations
     assert strict_wave_path.endswith("/themes/merge-wave/strict-auto")
     assert manual_wave_path.endswith("/themes/merge-wave/manual-review")
     assert relationship_graph_path.endswith("/themes/relationship-graph")
-    assert twitter_session_path.endswith("/themes/twitter/session")
-    assert twitter_session_challenge_path.endswith("/themes/twitter/session/challenge")
-    assert twitter_session_import_path.endswith("/themes/twitter/session/import")
+
+    for forbidden_path in paths:
+        assert not (
+            forbidden_path.endswith("/themes/twitter/session")
+            or "/themes/twitter/session/" in forbidden_path
+        ), f"twitter session endpoint should be removed: {forbidden_path}"
 
     assert rankings_ops["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/ThemeRankingsResponse"
@@ -80,18 +76,6 @@ def test_theme_openapi_contract_includes_merge_rankings_candidates_and_relations
     assert relationship_graph_ops["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/ThemeRelationshipGraphResponse"
     )
-    assert twitter_session_ops["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "/TwitterSessionStatusResponse"
-    )
-    assert twitter_session_challenge_ops["post"]["responses"]["200"]["content"]["application/json"]["schema"][
-        "$ref"
-    ].endswith("/TwitterSessionChallengeResponse")
-    assert twitter_session_import_ops["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "/TwitterSessionImportRequest"
-    )
-    assert twitter_session_import_ops["post"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "/TwitterSessionStatusResponse"
-    )
 
     for required_schema in [
         "ThemeRankingsResponse",
@@ -105,8 +89,15 @@ def test_theme_openapi_contract_includes_merge_rankings_candidates_and_relations
         "ManualReviewWaveRequest",
         "ManualReviewWaveResponse",
         "ThemeRelationshipGraphResponse",
+    ]:
+        assert required_schema in components
+
+    for forbidden_schema in [
         "TwitterSessionStatusResponse",
         "TwitterSessionChallengeResponse",
         "TwitterSessionImportRequest",
+        "BrowserCookieInput",
     ]:
-        assert required_schema in components
+        assert forbidden_schema not in components, (
+            f"twitter session schema should be removed: {forbidden_schema}"
+        )

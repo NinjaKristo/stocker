@@ -85,8 +85,6 @@ Use this when you want the full backend + frontend + worker stack on a Windows h
 py -3.11 -m venv .\backend\venv
 .\backend\venv\Scripts\Activate.ps1
 pip install -r .\backend\requirements.txt
-pip install -e .\xui-reader
-python -m playwright install chromium
 Copy-Item .\backend\.env.example .\backend\.env
 ```
 
