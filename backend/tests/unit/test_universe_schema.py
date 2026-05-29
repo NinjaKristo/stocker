@@ -108,6 +108,19 @@ class TestUniverseDefinitionConstruction:
         assert u.mic == "XBOM"
         assert u.key() == "market:IN:mic:XBOM"
 
+    def test_market_universe_storage_projection_uses_canonical_mic(self):
+        u = UniverseDefinition(type=UniverseType.MARKET, market=Market.IN, exchange="BSE")
+
+        projection = u.storage_projection()
+
+        assert projection.label == "India Market"
+        assert projection.key == "market:IN:mic:XBOM"
+        assert projection.type == "market"
+        assert projection.market == "IN"
+        assert projection.exchange == "XBOM"
+        assert projection.index is None
+        assert projection.symbols is None
+
     def test_market_universe_can_filter_by_listing_tier(self):
         u = UniverseDefinition(
             type=UniverseType.MARKET,

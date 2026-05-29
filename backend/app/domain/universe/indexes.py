@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from ..markets.catalog import MarketCatalogError, get_market_catalog
+from ..markets.market import SUPPORTED_MARKET_CODES
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,15 +24,11 @@ class IndexRegistry:
         normalized_definitions: list[IndexDefinition] = []
         self._by_key: dict[str, IndexDefinition] = {}
         self._by_alias: dict[str, str] = {}
-        catalog = get_market_catalog()
-
         for definition in tuple(definitions):
             key = definition.key.strip().upper()
             market = definition.market.strip().upper()
-            try:
-                catalog.get(market)
-            except MarketCatalogError as exc:
-                raise ValueError(f"Unsupported index market: {market}") from exc
+            if market not in SUPPORTED_MARKET_CODES:
+                raise ValueError(f"Unsupported index market: {market}")
             if key in self._by_key:
                 raise ValueError(f"Duplicate index key: {key}")
 

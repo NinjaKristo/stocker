@@ -9,6 +9,7 @@ from app.domain.markets import (
     market_registry,
 )
 from app.domain.markets.catalog import MarketCatalogError, get_market_catalog
+from app.domain.universe.indexes import index_registry
 
 
 def test_market_catalog_lists_supported_markets_in_runtime_order() -> None:
@@ -31,6 +32,15 @@ def test_market_catalog_entry_contains_stable_market_facts() -> None:
     assert hk.indexes == ("HSI",)
     assert hk.capabilities.official_universe is True
     assert hk.capabilities.finviz_screening is False
+
+
+def test_market_catalog_index_summaries_derive_from_index_registry() -> None:
+    catalog = get_market_catalog()
+
+    for market in catalog.supported_market_codes():
+        assert catalog.get(market).indexes == tuple(
+            definition.key for definition in index_registry.definitions(market)
+        )
 
 
 def test_market_catalog_entry_exposes_canonical_mic_and_currency_facts() -> None:
@@ -80,7 +90,6 @@ def test_market_catalog_entry_rejects_mic_facts_outside_declared_mics() -> None:
                 ),
             ),
             exchanges=("XAAA",),
-            indexes=(),
             capabilities=MarketCapabilities(
                 benchmark=False,
                 breadth=False,
@@ -117,7 +126,6 @@ def test_market_catalog_entry_rejects_mic_fact_currency_outside_supported_curren
                 ),
             ),
             exchanges=("XAAA", "XBBB"),
-            indexes=(),
             capabilities=MarketCapabilities(
                 benchmark=False,
                 breadth=False,

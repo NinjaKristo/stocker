@@ -20,11 +20,19 @@ class MarketProfile:
     calendar_id: str
     provider_calendar_id: str | None
     exchanges: tuple[str, ...]
-    indexes: tuple[str, ...]
     primary_benchmark_symbol: str
     benchmark_fallback_symbol: str | None
     benchmark_primary_kind: str
     benchmark_fallback_kind: str | None
+
+    @property
+    def indexes(self) -> tuple[str, ...]:
+        """Derived compatibility summary; IndexRegistry owns definitions."""
+        from ..universe.indexes import index_registry
+
+        return tuple(
+            definition.key for definition in index_registry.definitions(self.market.code)
+        )
 
 
 class MarketRegistry:
@@ -37,18 +45,12 @@ class MarketRegistry:
     def __init__(self, profiles: Iterable[MarketProfile]) -> None:
         self._profiles = tuple(profiles)
         self._by_code: dict[str, MarketProfile] = {}
-        self._market_by_index: dict[str, Market] = {}
 
         for profile in self._profiles:
             code = profile.market.code
             if code in self._by_code:
                 raise ValueError(f"Duplicate market profile: {code}")
             self._by_code[code] = profile
-            for index in profile.indexes:
-                normalized_index = index.upper()
-                if normalized_index in self._market_by_index:
-                    raise ValueError(f"Duplicate index alias: {normalized_index}")
-                self._market_by_index[normalized_index] = profile.market
 
     def profile(self, market: Market | str) -> MarketProfile:
         resolved = market if isinstance(market, Market) else Market.from_str(market)
@@ -79,10 +81,12 @@ class MarketRegistry:
         return resolved.mic if resolved else None
 
     def market_for_index(self, index: str | None) -> Market | None:
-        normalized = str(index or "").strip().upper()
-        if not normalized:
+        from ..universe.indexes import index_registry
+
+        market_code = index_registry.market_for(index)
+        if market_code is None:
             return None
-        return self._market_by_index.get(normalized)
+        return Market(market_code)
 
 
 market_registry = MarketRegistry(
@@ -95,7 +99,6 @@ market_registry = MarketRegistry(
             calendar_id="XNYS",
             provider_calendar_id=None,
             exchanges=("NYSE", "NASDAQ", "AMEX", "XNYS", "XNAS", "XASE"),
-            indexes=("SP500",),
             primary_benchmark_symbol="SPY",
             benchmark_fallback_symbol="IVV",
             benchmark_primary_kind="etf",
@@ -109,7 +112,6 @@ market_registry = MarketRegistry(
             calendar_id="XHKG",
             provider_calendar_id=None,
             exchanges=("HKEX", "SEHK", "XHKG"),
-            indexes=("HSI",),
             primary_benchmark_symbol="^HSI",
             benchmark_fallback_symbol="2800.HK",
             benchmark_primary_kind="index",
@@ -123,7 +125,6 @@ market_registry = MarketRegistry(
             calendar_id="XNSE",
             provider_calendar_id="NSE",
             exchanges=("NSE", "XNSE", "BSE", "XBOM"),
-            indexes=("NIFTY50",),
             primary_benchmark_symbol="^NSEI",
             benchmark_fallback_symbol="NIFTYBEES.NS",
             benchmark_primary_kind="index",
@@ -137,7 +138,6 @@ market_registry = MarketRegistry(
             calendar_id="XTKS",
             provider_calendar_id=None,
             exchanges=("TSE", "JPX", "XTKS"),
-            indexes=("NIKKEI225",),
             primary_benchmark_symbol="^N225",
             benchmark_fallback_symbol="1306.T",
             benchmark_primary_kind="index",
@@ -151,7 +151,6 @@ market_registry = MarketRegistry(
             calendar_id="XKRX",
             provider_calendar_id=None,
             exchanges=("KOSPI", "KOSDAQ", "KRX", "XKRX"),
-            indexes=("KOSPI",),
             primary_benchmark_symbol="^KS11",
             benchmark_fallback_symbol="069500.KS",
             benchmark_primary_kind="index",
@@ -165,7 +164,6 @@ market_registry = MarketRegistry(
             calendar_id="XTAI",
             provider_calendar_id=None,
             exchanges=("TWSE", "TPEX", "XTAI"),
-            indexes=("TAIEX",),
             primary_benchmark_symbol="^TWII",
             benchmark_fallback_symbol="0050.TW",
             benchmark_primary_kind="index",
@@ -179,7 +177,6 @@ market_registry = MarketRegistry(
             calendar_id="XSHG",
             provider_calendar_id=None,
             exchanges=("SSE", "SHSE", "XSHG", "SZSE", "XSHE", "BJSE", "XBSE", "XBEI"),
-            indexes=("CSI300",),
             primary_benchmark_symbol="000300.SS",
             benchmark_fallback_symbol="000001.SS",
             benchmark_primary_kind="index",
@@ -193,7 +190,6 @@ market_registry = MarketRegistry(
             calendar_id="XTSE",
             provider_calendar_id=None,
             exchanges=("TSX", "TSXV", "XTSE", "XTNX"),
-            indexes=("TSX_COMPOSITE",),
             primary_benchmark_symbol="^GSPTSE",
             benchmark_fallback_symbol="XIU.TO",
             benchmark_primary_kind="index",
@@ -207,7 +203,6 @@ market_registry = MarketRegistry(
             calendar_id="XETR",
             provider_calendar_id=None,
             exchanges=("XETR", "XETRA", "XFRA", "FRA", "FWB"),
-            indexes=("DAX", "MDAX", "SDAX"),
             primary_benchmark_symbol="^GDAXI",
             benchmark_fallback_symbol="EXS1.DE",
             benchmark_primary_kind="index",
@@ -221,7 +216,6 @@ market_registry = MarketRegistry(
             calendar_id="XSES",
             provider_calendar_id=None,
             exchanges=("SGX", "SES", "XSES"),
-            indexes=("STI",),
             primary_benchmark_symbol="^STI",
             benchmark_fallback_symbol="ES3.SI",
             benchmark_primary_kind="index",

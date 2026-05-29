@@ -12,7 +12,12 @@ from pydantic import BaseModel, field_validator, model_validator
 
 from ..domain.markets.catalog import get_market_catalog
 from ..domain.markets.mic_aliases import mic_alias_registry
-from ..domain.universe import listing_tier_registry
+from ..domain.universe import (
+    UniverseStorageProjection,
+    normalize_market_scope,
+    parse_market_key_components,
+    validate_legacy_exchange_scope,
+)
 from ..domain.universe.indexes import index_registry
 
 
@@ -51,24 +56,6 @@ IndexName = _make_str_enum(
     "IndexName",
     index_registry.supported_index_keys(),
 )
-
-
-def _parse_market_key_components(universe_key: str | None) -> dict[str, str]:
-    if not isinstance(universe_key, str):
-        return {}
-    parts = [part.strip() for part in universe_key.split(":") if part.strip()]
-    if len(parts) < 2 or parts[0].lower() != "market":
-        return {}
-
-    components: dict[str, str] = {"market": parts[1].upper()}
-    for index in range(2, len(parts) - 1, 2):
-        name = parts[index].lower()
-        value = parts[index + 1]
-        if name == "mic":
-            components["mic"] = value.upper()
-        elif name == "tier":
-            components["tier"] = value
-    return components
 
 
 class UniverseDefinition(BaseModel):
@@ -207,61 +194,20 @@ class UniverseDefinition(BaseModel):
         return self
 
     def _validate_market_mic_and_listing_tier(self) -> None:
-        market_code = self.market.value
-        market_entry = get_market_catalog().get(market_code)
-
-        if self.mic is not None and self.mic not in market_entry.mics:
-            supported = ", ".join(market_entry.mics)
-            raise ValueError(
-                f"Unsupported MIC {self.mic!r} for market {market_code}. "
-                f"Supported: {supported}"
-            )
-
-        if self.exchange is not None:
-            exchange_alias = self.exchange.value
-            resolved = mic_alias_registry.resolve(market_code, exchange_alias)
-            if resolved is None:
-                raise ValueError(
-                    f"Unsupported exchange alias {exchange_alias!r} for market "
-                    f"{market_code}"
-                )
-            if self.mic is not None and self.mic != resolved.mic:
-                raise ValueError(
-                    f"MIC {self.mic!r} conflicts with exchange alias "
-                    f"{exchange_alias!r} resolved MIC {resolved.mic!r}"
-                )
-            self.mic = resolved.mic
-
-        if self.listing_tier is not None:
-            normalized_tier = listing_tier_registry.normalize(
-                market_code,
-                self.listing_tier,
-                mic=self.mic,
-            )
-            if normalized_tier is None:
-                scope = f"{market_code}/{self.mic}" if self.mic else market_code
-                raise ValueError(
-                    f"Unsupported listing_tier {self.listing_tier!r} for {scope}"
-                )
-            self.listing_tier = normalized_tier
+        normalized = normalize_market_scope(
+            self.market.value,
+            mic=self.mic,
+            exchange=self.exchange.value if self.exchange else None,
+            listing_tier=self.listing_tier,
+        )
+        self.mic = normalized.mic
+        self.listing_tier = normalized.listing_tier
 
     def _validate_legacy_exchange_scope(self) -> None:
-        exchange_alias = self.exchange.value
-        if self.market is not None:
-            resolved = mic_alias_registry.resolve(self.market.value, exchange_alias)
-            if resolved is None:
-                raise ValueError(
-                    f"Unsupported exchange alias {exchange_alias!r} for market "
-                    f"{self.market.value}"
-                )
-            return
-
-        if mic_alias_registry.is_ambiguous(exchange_alias):
-            raise ValueError(
-                f"Ambiguous exchange alias {exchange_alias!r} requires market context"
-            )
-        if mic_alias_registry.resolve_global(exchange_alias) is None:
-            raise ValueError(f"Unsupported exchange alias {exchange_alias!r}")
+        validate_legacy_exchange_scope(
+            self.exchange.value,
+            market=self.market.value if self.market else None,
+        )
 
     def key(self) -> str:
         """
@@ -297,6 +243,17 @@ class UniverseDefinition(BaseModel):
             digest = hashlib.sha256(joined.encode()).hexdigest()[:12]
             inactive_suffix = ":inactive" if self.allow_inactive_symbols else ""
             return f"{self.type.value}:{digest}{inactive_suffix}"
+
+    def storage_projection(self) -> UniverseStorageProjection:
+        return UniverseStorageProjection(
+            label=self.label(),
+            key=self.key(),
+            type=self.type.value,
+            market=self.market.value if self.market else None,
+            exchange=self.mic or (self.exchange.value if self.exchange else None),
+            index=self.index.value if self.index else None,
+            symbols=self.symbols,
+        )
 
     def label(self) -> str:
         """
@@ -368,7 +325,7 @@ class UniverseDefinition(BaseModel):
             symbols: Optional[List[str]] = None
 
             if parsed_type == UniverseType.MARKET:
-                key_parts = _parse_market_key_components(universe_key)
+                key_parts = parse_market_key_components(universe_key)
                 if (
                     resolved_market is None
                     and key_parts.get("market")

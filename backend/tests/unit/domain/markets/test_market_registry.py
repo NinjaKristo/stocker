@@ -6,6 +6,7 @@ import pytest
 
 from app.domain.markets import Market, SUPPORTED_MARKET_CODES
 from app.domain.markets.registry import MarketProfile, MarketRegistry, market_registry
+from app.domain.universe.indexes import index_registry
 
 
 def test_every_supported_market_has_complete_profile() -> None:
@@ -34,9 +35,18 @@ def test_supported_codes_are_in_runtime_order() -> None:
 
 def test_market_for_index_uses_registry_mapping() -> None:
     assert market_registry.market_for_index("HSI") == Market("HK")
+    assert market_registry.market_for_index("NIFTY50") == Market("IN")
     assert market_registry.market_for_index("NIKKEI225") == Market("JP")
     assert market_registry.market_for_index("TAIEX") == Market("TW")
+    assert market_registry.market_for_index("CSI300") == Market("CN")
     assert market_registry.market_for_index("unknown") is None
+
+
+def test_market_registry_index_lookups_delegate_to_index_registry() -> None:
+    for index_key in index_registry.supported_index_keys():
+        assert market_registry.market_for_index(index_key) == Market(
+            index_registry.market_for(index_key)
+        )
 
 
 def test_market_for_exchange_uses_registry_mapping() -> None:
@@ -78,7 +88,6 @@ def test_custom_registry_does_not_own_exchange_alias_uniqueness() -> None:
         calendar_id=hk.calendar_id,
         provider_calendar_id=hk.provider_calendar_id,
         exchanges=("NYSE",),
-        indexes=hk.indexes,
         primary_benchmark_symbol=hk.primary_benchmark_symbol,
         benchmark_fallback_symbol=hk.benchmark_fallback_symbol,
         benchmark_primary_kind=hk.benchmark_primary_kind,
@@ -87,28 +96,6 @@ def test_custom_registry_does_not_own_exchange_alias_uniqueness() -> None:
     registry = MarketRegistry((us, duplicate_exchange))
 
     assert registry.profile("HK").exchanges == ("NYSE",)
-
-
-def test_custom_registry_rejects_duplicate_index_aliases() -> None:
-    us = market_registry.profile("US")
-    hk = market_registry.profile("HK")
-
-    duplicate_index = MarketProfile(
-        market=hk.market,
-        label=hk.label,
-        currency=hk.currency,
-        timezone_name=hk.timezone_name,
-        calendar_id=hk.calendar_id,
-        provider_calendar_id=hk.provider_calendar_id,
-        exchanges=hk.exchanges,
-        indexes=("SP500",),
-        primary_benchmark_symbol=hk.primary_benchmark_symbol,
-        benchmark_fallback_symbol=hk.benchmark_fallback_symbol,
-        benchmark_primary_kind=hk.benchmark_primary_kind,
-        benchmark_fallback_kind=hk.benchmark_fallback_kind,
-    )
-    with pytest.raises(ValueError, match="Duplicate index alias"):
-        MarketRegistry((us, duplicate_index))
 
 
 def test_profile_type_is_public_contract() -> None:

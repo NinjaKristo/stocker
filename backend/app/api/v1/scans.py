@@ -163,18 +163,16 @@ async def create_scan(
     market_refresh_conflict = _get_market_refresh_conflict_detail(guard_market)
     if market_refresh_conflict is not None:
         raise HTTPException(status_code=409, detail=market_refresh_conflict)
+    universe_projection = universe_def.storage_projection()
     cmd = CreateScanCommand(
         universe_def=universe_def,
-        universe_label=universe_def.label(),
-        universe_key=universe_def.key(),
-        universe_type=universe_def.type.value,
-        universe_market=universe_def.market.value if universe_def.market else None,
-        universe_exchange=(
-            universe_def.mic
-            or (universe_def.exchange.value if universe_def.exchange else None)
-        ),
-        universe_index=universe_def.index.value if universe_def.index else None,
-        universe_symbols=universe_def.symbols,
+        universe_label=universe_projection.label,
+        universe_key=universe_projection.key,
+        universe_type=universe_projection.type,
+        universe_market=universe_projection.market,
+        universe_exchange=universe_projection.exchange,
+        universe_index=universe_projection.index,
+        universe_symbols=universe_projection.symbols,
         screeners=request.screeners,
         composite_method=request.composite_method,
         criteria=request.criteria,

@@ -35,7 +35,6 @@ class MarketCatalogEntry:
     default_currency: str
     mic_facts: tuple[MicFacts, ...]
     exchanges: tuple[str, ...]
-    indexes: tuple[str, ...]
     capabilities: MarketCapabilities
 
     def __post_init__(self) -> None:
@@ -97,6 +96,13 @@ class MarketCatalogEntry:
     @property
     def provider_calendar_id(self) -> str | None:
         return self.primary_mic_facts.provider_calendar_id
+
+    @property
+    def indexes(self) -> tuple[str, ...]:
+        """Derived compatibility summary; IndexRegistry owns definitions."""
+        from ..universe.indexes import index_registry
+
+        return tuple(definition.key for definition in index_registry.definitions(self.code))
 
     def mic_facts_for(self, mic: str | None = None) -> MicFacts:
         target = (mic or self.primary_mic).strip().upper()
@@ -190,7 +196,6 @@ def _market_entry(
     primary_mic: str,
     mic_facts: tuple[MicFacts, ...],
     exchanges: tuple[str, ...],
-    indexes: tuple[str, ...],
     capabilities: MarketCapabilities,
     supported_currencies: tuple[str, ...] | None = None,
     default_currency: str | None = None,
@@ -214,7 +219,6 @@ def _market_entry(
         default_currency=default_currency or primary_facts.default_currency,
         mic_facts=mic_facts,
         exchanges=exchanges,
-        indexes=indexes,
         capabilities=capabilities,
     )
 
@@ -243,7 +247,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("NYSE", "NASDAQ", "AMEX"),
-            indexes=("SP500",),
             capabilities=MarketCapabilities(
                 benchmark=True,
                 breadth=True,
@@ -266,7 +269,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("HKEX", "SEHK", "XHKG"),
-            indexes=("HSI",),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -287,7 +289,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("NSE", "XNSE", "BSE", "XBOM"),
-            indexes=(),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -302,7 +303,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("TSE", "JPX", "XTKS"),
-            indexes=("NIKKEI225",),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -317,7 +317,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("KOSPI", "KOSDAQ", "KRX", "XKRX"),
-            indexes=(),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -332,7 +331,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("TWSE", "TPEX", "XTAI"),
-            indexes=("TAIEX",),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -357,7 +355,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("SSE", "SZSE", "BJSE", "XSHG", "XSHE", "XBSE"),
-            indexes=(),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -377,7 +374,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("TSX", "TSXV", "XTSE", "XTNX"),
-            indexes=("TSX_COMPOSITE",),
             capabilities=FULL_CAPABILITIES,
         ),
         _market_entry(
@@ -397,7 +393,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("XETR", "XETRA", "XFRA", "FRA", "FWB"),
-            indexes=("DAX", "MDAX", "SDAX"),
             capabilities=MarketCapabilities(
                 benchmark=True,
                 breadth=True,
@@ -420,7 +415,6 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("SGX", "SES", "XSES"),
-            indexes=("STI",),
             capabilities=MarketCapabilities(
                 benchmark=True,
                 breadth=False,
