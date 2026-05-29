@@ -79,10 +79,7 @@ class _RecordingUniversePipeline:
             "updated": 0,
             "total": len(result.canonical_rows),
             "rejected": len(result.rejected_rows),
-            "coverage_rejected": dict(kwargs.get("extra_summary") or {}).get(
-                "coverage_rejected",
-                0,
-            ),
+            "coverage_rejected": len(result.side_effects.coverage_rejections),
             "source_name": kwargs["source_name"],
             "snapshot_id": kwargs["snapshot_id"],
             "canonical_rows": [],
@@ -178,11 +175,11 @@ def test_in_ingest_delegates_filtered_result_to_shared_pipeline():
     assert len(pipeline.canonicalized_calls) == 1
     call = pipeline.canonicalized_calls[0]
     assert call["market"] == "IN"
-    assert call["strict"] is False
-    assert call["extra_summary"] == {"coverage_rejected": 0}
+    assert call["strict"] is True
     assert call["result"].canonical_rows[0].symbol == "RELIANCE.NS"
     assert call["result"].canonical_rows[0].mic == "XNSE"
     assert call["result"].rejected_rows == ()
+    assert call["result"].side_effects.coverage_rejections == ()
     db.close()
 
 
@@ -661,6 +658,7 @@ def test_ingest_in_snapshot_rows_deactivates_existing_active_bse_symbol_rejected
     assert event is not None
     assert event.new_status == UNIVERSE_STATUS_INACTIVE_NO_DATA
     assert event.trigger_source == "in_ingest_coverage_gate"
+    assert json.loads(event.payload_json)["snapshot_as_of"] == "2026-04-21"
     db.close()
 
 

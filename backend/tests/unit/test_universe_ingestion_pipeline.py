@@ -13,6 +13,8 @@ from app.domain.universe.ingestion import (
     CanonicalUniverseIngestionResult,
     CanonicalUniverseRow,
     RejectedUniverseRow,
+    UniverseIndustryTaxonomy,
+    UniverseIngestionSideEffects,
     UniverseLifecycleMetadata,
     UniverseSourceProvenance,
 )
@@ -128,6 +130,58 @@ def test_flat_canonicalizer_adapter_resolves_exchange_alias_to_catalog_mic() -> 
 
     assert row.mic == "XTAI"
     assert row.provenance.source_metadata["source_exchange"] == "TPEX"
+
+
+def test_flat_canonicalizer_adapter_keeps_taxonomy_out_of_provenance() -> None:
+    adapter = FlatUniverseCanonicalizerAdapter(
+        SimpleNamespace(
+            canonicalize_rows=lambda rows, **kwargs: SimpleNamespace(
+                canonical_rows=(
+                    SimpleNamespace(
+                        symbol="600519.SS",
+                        name="Kweichow Moutai",
+                        market="CN",
+                        exchange="SSE",
+                        board="SSE_MAIN",
+                        currency="CNY",
+                        timezone="Asia/Shanghai",
+                        local_code="600519",
+                        sector="Consumer Staples",
+                        industry_group="Food & Beverage",
+                        industry="Beverages",
+                        sub_industry="Liquor",
+                        market_cap=100.0,
+                        source_name="cn_reference_bundle",
+                        source_symbol="600519",
+                        source_row_number=1,
+                        snapshot_id="cn-2026-05-29",
+                        snapshot_as_of="2026-05-29",
+                        source_metadata={},
+                        lineage_hash="lineage-600519",
+                        row_hash="row-600519",
+                    ),
+                ),
+                rejected_rows=(),
+            )
+        )
+    )
+
+    result = adapter.canonicalize_rows(
+        [{"symbol": "600519"}],
+        source_name="cn_reference_bundle",
+        snapshot_id="cn-2026-05-29",
+    )
+
+    assert "industry_group" not in result.canonical_rows[0].provenance.source_metadata
+    assert result.side_effects.industry_taxonomy_rows == (
+        UniverseIndustryTaxonomy(
+            symbol="600519.SS",
+            sector="Consumer Staples",
+            industry_group="Food & Beverage",
+            industry="Beverages",
+            sub_industry="Liquor",
+        ),
+    )
 
 
 def _row(
@@ -268,6 +322,42 @@ def test_pipeline_strict_mode_raises_for_rejected_rows() -> None:
             snapshot_id="sgx-2026-05-29",
             strict=True,
         )
+    db.close()
+
+
+def test_pipeline_strict_mode_allows_non_blocking_rejected_rows() -> None:
+    TestingSessionLocal = _make_session()
+    db = TestingSessionLocal()
+    canonicalizer = _FakeCanonicalizer(
+        CanonicalUniverseIngestionResult(
+            rejected_rows=(
+                RejectedUniverseRow(
+                    source_row_number=1,
+                    source_symbol="500002.BO",
+                    reason="missing_yfinance_price_coverage",
+                    strict=False,
+                ),
+            ),
+            side_effects=UniverseIngestionSideEffects(),
+        )
+    )
+    pipeline = UniverseIngestionPipeline(
+        canonicalizers={"IN": canonicalizer},
+        persistence=UniversePersistence.for_stock_universe_service(
+            StockUniverseService()
+        ),
+    )
+
+    stats = pipeline.ingest_snapshot_rows(
+        db,
+        market="IN",
+        rows=[{"symbol": "500002.BO"}],
+        source_name="in_reference_bundle",
+        snapshot_id="in-2026-05-29",
+        strict=True,
+    )
+
+    assert stats["rejected"] == 1
     db.close()
 
 

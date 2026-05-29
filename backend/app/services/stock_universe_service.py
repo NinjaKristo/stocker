@@ -36,6 +36,9 @@ from ..config import settings
 from ..domain.universe.ingestion import (
     CanonicalUniverseIngestionResult,
     CanonicalUniverseRow,
+    RejectedUniverseRow,
+    UniverseCoverageRejection,
+    UniverseIngestionSideEffects,
 )
 from .ca_universe_ingestion_adapter import ca_universe_ingestion_adapter
 from .cn_universe_ingestion_adapter import cn_universe_ingestion_adapter
@@ -48,6 +51,7 @@ from .sg_universe_ingestion_adapter import sg_universe_ingestion_adapter
 from .tw_universe_ingestion_adapter import tw_universe_ingestion_adapter
 from .universe_ingestion_pipeline import (
     FlatUniverseCanonicalizerAdapter,
+    UniverseBeforeReconciliationContext,
     UniverseIngestionPipeline,
     UniversePersistence,
 )
@@ -95,19 +99,13 @@ class StockUniverseService:
                 "TW": FlatUniverseCanonicalizerAdapter(self._tw_ingestion),
                 "CA": FlatUniverseCanonicalizerAdapter(self._ca_ingestion),
                 "DE": FlatUniverseCanonicalizerAdapter(self._de_ingestion),
-                "CN": FlatUniverseCanonicalizerAdapter(
-                    self._cn_ingestion,
-                    extra_source_metadata_fields=(
-                        "board",
-                        "industry_group",
-                        "sub_industry",
-                    ),
-                ),
+                "CN": FlatUniverseCanonicalizerAdapter(self._cn_ingestion),
                 "SG": self._sg_ingestion,
             },
             persistence=UniversePersistence.for_stock_universe_service(self),
             before_reconciliation_hooks={
-                "CN": self._upsert_cn_stock_industry_from_canonical_rows,
+                "CN": self._upsert_cn_stock_industry_from_pipeline_context,
+                "IN": self._deactivate_india_coverage_rejections,
             },
         )
         self._bulk_fetcher = None
@@ -1310,29 +1308,23 @@ class StockUniverseService:
     def _deactivate_india_coverage_rejections(
         self,
         db: Session,
-        rejected_rows: Iterable[SimpleNamespace],
+        context: UniverseBeforeReconciliationContext,
         *,
-        source_name: str,
-        snapshot_id: str,
-        snapshot_as_of: str | None,
-    ) -> None:
-        rows = [
-            row
-            for row in rejected_rows
-            if str(getattr(row, "symbol", "") or "").strip()
-        ]
+        now: datetime,
+    ) -> dict[str, int]:
+        rows = context.result.side_effects.coverage_rejections
         if not rows:
-            return
+            return {"coverage_rejected": 0}
 
-        now = datetime.utcnow()
         existing_rows = {
             row.symbol: row
             for row in db.query(StockUniverse)
             .filter(StockUniverse.symbol.in_([row.symbol for row in rows]))
             .all()
         }
-        for rejected_row in rows:
-            existing = existing_rows.get(rejected_row.symbol)
+        for coverage_rejection in rows:
+            rejected_row = coverage_rejection.rejected_row
+            existing = existing_rows.get(coverage_rejection.symbol)
             if existing is None or self._normalize_status(existing) != UNIVERSE_STATUS_ACTIVE:
                 continue
             self._apply_status_transition(
@@ -1343,16 +1335,21 @@ class StockUniverseService:
                 reason=f"Rejected by IN BSE coverage gate: {rejected_row.reason}",
                 now=now,
                 payload={
-                    "source_name": source_name,
+                    "source_name": rejected_row.source_name or context.source_name,
                     "source_symbol": rejected_row.source_symbol,
                     "source_row_number": rejected_row.source_row_number,
-                    "snapshot_id": snapshot_id,
-                    "snapshot_as_of": snapshot_as_of,
-                    "symbol": rejected_row.symbol,
+                    "snapshot_id": rejected_row.snapshot_id or context.snapshot_id,
+                    "snapshot_as_of": (
+                        str(rejected_row.snapshot_as_of)
+                        if rejected_row.snapshot_as_of is not None
+                        else None
+                    ),
+                    "symbol": coverage_rejection.symbol,
                     "reason": rejected_row.reason,
                 },
                 source="in_ingest",
             )
+        return {"coverage_rejected": len(rows)}
 
     def ingest_in_snapshot_rows(
         self,
@@ -1387,22 +1384,39 @@ class StockUniverseService:
             db,
             source_canonical_rows,
         )
-        self._deactivate_india_coverage_rejections(
-            db,
-            coverage_rejected_rows,
-            source_name=source_name,
-            snapshot_id=snapshot_id,
-            snapshot_as_of=snapshot_as_of,
+
+        source_rejections = tuple(
+            FlatUniverseCanonicalizerAdapter.rejected_row_from_flat(row)
+            for row in source_rejected_rows
         )
+        coverage_rejections: list[RejectedUniverseRow] = []
+        coverage_side_effects: list[UniverseCoverageRejection] = []
+        for row in coverage_rejected_rows:
+            rejected_row = RejectedUniverseRow(
+                source_row_number=row.source_row_number,
+                source_symbol=row.source_symbol,
+                reason=row.reason,
+                source_name=source_name,
+                snapshot_id=snapshot_id,
+                snapshot_as_of=snapshot_as_of,
+                strict=False,
+            )
+            coverage_rejections.append(rejected_row)
+            coverage_side_effects.append(
+                UniverseCoverageRejection(
+                    symbol=row.symbol,
+                    rejected_row=rejected_row,
+                )
+            )
 
         result = CanonicalUniverseIngestionResult(
             canonical_rows=tuple(
                 FlatUniverseCanonicalizerAdapter.canonical_row_from_flat(row)
                 for row in accepted_rows
             ),
-            rejected_rows=tuple(
-                FlatUniverseCanonicalizerAdapter.rejected_row_from_flat(row)
-                for row in [*source_rejected_rows, *coverage_rejected_rows]
+            rejected_rows=source_rejections + tuple(coverage_rejections),
+            side_effects=UniverseIngestionSideEffects(
+                coverage_rejections=tuple(coverage_side_effects),
             ),
         )
         return self._universe_ingestion_pipeline.ingest_canonicalized_result(
@@ -1411,8 +1425,7 @@ class StockUniverseService:
             source_name=source_name,
             snapshot_id=snapshot_id,
             result=result,
-            strict=False,
-            extra_summary={"coverage_rejected": len(coverage_rejected_rows)},
+            strict=strict,
         )
 
     @staticmethod
@@ -1738,31 +1751,17 @@ class StockUniverseService:
         self._bulk_insert_records(db, new_rows)
         return changed
 
-    def _upsert_cn_stock_industry_from_canonical_rows(
+    def _upsert_cn_stock_industry_from_pipeline_context(
         self,
         db: Session,
-        canonical_rows: tuple[CanonicalUniverseRow, ...],
+        context: UniverseBeforeReconciliationContext,
         *,
         now: datetime,
     ) -> dict[str, int]:
-        rows = [
-            SimpleNamespace(
-                symbol=row.symbol,
-                sector=row.sector,
-                industry_group=str(
-                    row.provenance.source_metadata.get("industry_group") or ""
-                ),
-                industry=row.industry,
-                sub_industry=str(
-                    row.provenance.source_metadata.get("sub_industry") or ""
-                ),
-            )
-            for row in canonical_rows
-        ]
         return {
             "stock_industry_upserts": self._upsert_cn_stock_industry_rows(
                 db,
-                rows,
+                context.result.side_effects.industry_taxonomy_rows,
                 now=now,
             )
         }

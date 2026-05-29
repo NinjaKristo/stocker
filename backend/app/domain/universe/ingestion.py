@@ -232,6 +232,8 @@ class RejectedUniverseRow:
     reason: str
     source_name: str | None = None
     snapshot_id: str | None = None
+    snapshot_as_of: date | str | None = None
+    strict: bool = True
 
     def __post_init__(self) -> None:
         row_number = self.source_row_number
@@ -239,6 +241,8 @@ class RejectedUniverseRow:
             row_number = int(row_number)
             if row_number <= 0:
                 raise ValueError("source_row_number must be positive when provided")
+        if not isinstance(self.strict, bool):
+            raise ValueError("strict must be a boolean")
 
         object.__setattr__(self, "source_row_number", row_number)
         object.__setattr__(
@@ -256,6 +260,73 @@ class RejectedUniverseRow:
             self,
             "snapshot_id",
             _optional_text(self.snapshot_id, "snapshot_id"),
+        )
+        object.__setattr__(
+            self,
+            "snapshot_as_of",
+            _optional_snapshot_as_of(self.snapshot_as_of),
+        )
+        object.__setattr__(self, "strict", self.strict)
+
+
+@dataclass(frozen=True, slots=True)
+class UniverseIndustryTaxonomy:
+    """Typed industry taxonomy payload carried alongside canonical rows."""
+
+    symbol: str
+    sector: str = ""
+    industry_group: str = ""
+    industry: str = ""
+    sub_industry: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "symbol", _required_text(self.symbol, "symbol").upper())
+        object.__setattr__(self, "sector", _optional_text(self.sector, "sector") or "")
+        object.__setattr__(
+            self,
+            "industry_group",
+            _optional_text(self.industry_group, "industry_group") or "",
+        )
+        object.__setattr__(
+            self,
+            "industry",
+            _optional_text(self.industry, "industry") or "",
+        )
+        object.__setattr__(
+            self,
+            "sub_industry",
+            _optional_text(self.sub_industry, "sub_industry") or "",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class UniverseCoverageRejection:
+    """Rejected canonical symbol that should trigger market-specific side effects."""
+
+    symbol: str
+    rejected_row: RejectedUniverseRow
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "symbol", _required_text(self.symbol, "symbol").upper())
+
+
+@dataclass(frozen=True, slots=True)
+class UniverseIngestionSideEffects:
+    """Typed side-effect payloads emitted by canonicalization/gating policies."""
+
+    industry_taxonomy_rows: tuple[UniverseIndustryTaxonomy, ...] = ()
+    coverage_rejections: tuple[UniverseCoverageRejection, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "industry_taxonomy_rows",
+            tuple(self.industry_taxonomy_rows or ()),
+        )
+        object.__setattr__(
+            self,
+            "coverage_rejections",
+            tuple(self.coverage_rejections or ()),
         )
 
 
@@ -284,10 +355,14 @@ class CanonicalUniverseIngestionResult:
 
     canonical_rows: tuple[CanonicalUniverseRow, ...] = ()
     rejected_rows: tuple[RejectedUniverseRow, ...] = ()
+    side_effects: UniverseIngestionSideEffects = field(
+        default_factory=UniverseIngestionSideEffects
+    )
 
     def __post_init__(self) -> None:
         canonical_rows = tuple(self.canonical_rows or ())
         rejected_rows = tuple(self.rejected_rows or ())
+        side_effects = self.side_effects or UniverseIngestionSideEffects()
 
         seen: dict[tuple[str, str, str], CanonicalUniverseRow] = {}
         for row in canonical_rows:
@@ -301,6 +376,7 @@ class CanonicalUniverseIngestionResult:
 
         object.__setattr__(self, "canonical_rows", canonical_rows)
         object.__setattr__(self, "rejected_rows", rejected_rows)
+        object.__setattr__(self, "side_effects", side_effects)
 
     @property
     def accepted_count(self) -> int:

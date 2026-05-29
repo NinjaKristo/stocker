@@ -114,6 +114,14 @@ def test_canonical_universe_models_reject_loose_boundary_types() -> None:
             snapshot_id="sgx-2026-05-28",
         )
 
+    with pytest.raises(ValueError, match="strict must be a boolean"):
+        RejectedUniverseRow(
+            source_row_number=1,
+            source_symbol="BAD",
+            reason="Invalid symbol",
+            strict="false",  # type: ignore[arg-type]
+        )
+
 
 def test_canonical_ingestion_result_rejects_duplicate_active_market_mic_local_code() -> None:
     first = CanonicalUniverseRow(

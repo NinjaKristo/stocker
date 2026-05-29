@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Protocol
 
@@ -12,6 +13,8 @@ from ..domain.universe.ingestion import (
     CanonicalUniverseIngestionResult,
     CanonicalUniverseRow,
     RejectedUniverseRow,
+    UniverseIndustryTaxonomy,
+    UniverseIngestionSideEffects,
     UniverseLifecycleMetadata,
     UniverseSourceProvenance,
 )
@@ -36,11 +39,23 @@ class UniverseCanonicalizer(Protocol):
         """Return accepted/rejected canonical rows for one source snapshot."""
 
 
+@dataclass(frozen=True, slots=True)
+class UniverseBeforeReconciliationContext:
+    market: str
+    source_name: str
+    snapshot_id: str
+    result: CanonicalUniverseIngestionResult
+
+    @property
+    def canonical_rows(self) -> tuple[CanonicalUniverseRow, ...]:
+        return self.result.canonical_rows
+
+
 class UniverseBeforeReconciliationHook(Protocol):
     def __call__(
         self,
         db: Session,
-        canonical_rows: tuple[CanonicalUniverseRow, ...],
+        context: UniverseBeforeReconciliationContext,
         *,
         now: datetime,
     ) -> Mapping[str, Any]:
@@ -53,11 +68,8 @@ class FlatUniverseCanonicalizerAdapter:
     def __init__(
         self,
         canonicalizer: Any,
-        *,
-        extra_source_metadata_fields: Iterable[str] = (),
     ) -> None:
         self._canonicalizer = canonicalizer
-        self._extra_source_metadata_fields = tuple(extra_source_metadata_fields)
 
     def canonicalize_rows(
         self,
@@ -77,26 +89,22 @@ class FlatUniverseCanonicalizerAdapter:
         )
         if isinstance(result, CanonicalUniverseIngestionResult):
             return result
+        flat_canonical_rows = tuple(result.canonical_rows)
+        canonical_rows = tuple(self._canonical_row(row) for row in flat_canonical_rows)
         return CanonicalUniverseIngestionResult(
-            canonical_rows=tuple(
-                self._canonical_row(row) for row in result.canonical_rows
-            ),
+            canonical_rows=canonical_rows,
             rejected_rows=tuple(
                 self._rejected_row(row) for row in result.rejected_rows
             ),
+            side_effects=self._side_effects(flat_canonical_rows),
         )
 
     def _canonical_row(self, row: Any) -> CanonicalUniverseRow:
-        return self.canonical_row_from_flat(
-            row,
-            extra_source_metadata_fields=self._extra_source_metadata_fields,
-        )
+        return self.canonical_row_from_flat(row)
 
     @staticmethod
     def canonical_row_from_flat(
         row: Any,
-        *,
-        extra_source_metadata_fields: Iterable[str] = (),
     ) -> CanonicalUniverseRow:
         source_metadata = dict(getattr(row, "source_metadata", {}) or {})
         market = row.market
@@ -104,10 +112,6 @@ class FlatUniverseCanonicalizerAdapter:
         mic = FlatUniverseCanonicalizerAdapter._canonical_mic(market, source_exchange)
         if source_exchange and source_exchange != mic:
             source_metadata.setdefault("source_exchange", source_exchange)
-        for field_name in extra_source_metadata_fields:
-            value = getattr(row, field_name, None)
-            if value is not None:
-                source_metadata[field_name] = value
 
         return CanonicalUniverseRow(
             symbol=row.symbol,
@@ -141,6 +145,35 @@ class FlatUniverseCanonicalizerAdapter:
         return str(exchange or "").strip().upper()
 
     @staticmethod
+    def _side_effects(rows: Iterable[Any]) -> UniverseIngestionSideEffects:
+        return UniverseIngestionSideEffects(
+            industry_taxonomy_rows=tuple(
+                FlatUniverseCanonicalizerAdapter._industry_taxonomy(row)
+                for row in rows
+                if FlatUniverseCanonicalizerAdapter._has_industry_taxonomy(row)
+            )
+        )
+
+    @staticmethod
+    def _has_industry_taxonomy(row: Any) -> bool:
+        if str(getattr(row, "market", "") or "").strip().upper() != "CN":
+            return False
+        return any(
+            str(getattr(row, field_name, "") or "").strip()
+            for field_name in ("sector", "industry_group", "industry", "sub_industry")
+        )
+
+    @staticmethod
+    def _industry_taxonomy(row: Any) -> UniverseIndustryTaxonomy:
+        return UniverseIndustryTaxonomy(
+            symbol=row.symbol,
+            sector=getattr(row, "sector", "") or "",
+            industry_group=getattr(row, "industry_group", "") or "",
+            industry=getattr(row, "industry", "") or "",
+            sub_industry=getattr(row, "sub_industry", "") or "",
+        )
+
+    @staticmethod
     def _rejected_row(row: Any) -> RejectedUniverseRow:
         return FlatUniverseCanonicalizerAdapter.rejected_row_from_flat(row)
 
@@ -152,6 +185,7 @@ class FlatUniverseCanonicalizerAdapter:
             reason=row.reason,
             source_name=getattr(row, "source_name", None),
             snapshot_id=getattr(row, "snapshot_id", None),
+            snapshot_as_of=getattr(row, "snapshot_as_of", None),
         )
 
 
@@ -311,7 +345,18 @@ class UniversePersistence:
         extra_summary: dict[str, Any] = {}
         if before_reconciliation is not None:
             extra_summary.update(
-                dict(before_reconciliation(db, canonical_rows, now=now))
+                dict(
+                    before_reconciliation(
+                        db,
+                        UniverseBeforeReconciliationContext(
+                            market=market,
+                            source_name=source_name,
+                            snapshot_id=snapshot_id,
+                            result=result,
+                        ),
+                        now=now,
+                    )
+                )
             )
 
         reconciliation = self._service._record_market_reconciliation_run(
@@ -562,13 +607,13 @@ class UniverseIngestionPipeline:
         snapshot_id: str,
         result: CanonicalUniverseIngestionResult,
         strict: bool = True,
-        extra_summary: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         market_code = str(market or "").strip().upper()
-        if strict and result.rejected_rows:
-            sample = self._rejected_sample(result.rejected_rows)
+        blocking_rejections = tuple(row for row in result.rejected_rows if row.strict)
+        if strict and blocking_rejections:
+            sample = self._rejected_sample(blocking_rejections)
             raise ValueError(
-                f"{market_code} ingestion rejected {len(result.rejected_rows)} "
+                f"{market_code} ingestion rejected {len(blocking_rejections)} "
                 f"row(s). {sample}"
             )
 
@@ -582,11 +627,6 @@ class UniverseIngestionPipeline:
             trigger_source=trigger_source,
             before_reconciliation=self._before_reconciliation_hooks.get(market_code),
         )
-        if extra_summary:
-            persisted["extra_summary"] = {
-                **dict(persisted.get("extra_summary") or {}),
-                **dict(extra_summary),
-            }
         return self._summary(
             market=market_code,
             source_name=source_name,
