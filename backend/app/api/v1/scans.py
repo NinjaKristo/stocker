@@ -28,6 +28,7 @@ from ...schemas.scanning import (
 from ...schemas.ui_view_snapshot import UISnapshotEnvelope
 from ...database import SessionLocal
 from ...domain.markets import market_registry
+from ...domain.universe.indexes import index_registry
 from ...services.market_activity_gate import MarketActivityGate, MarketGateConflict
 from ...services.market_activity_service import get_runtime_activity_status
 from ...tasks.market_queues import SUPPORTED_MARKETS
@@ -91,8 +92,7 @@ def _resolve_scan_guard_market(universe_def: Any) -> str | None:
         market = market_registry.market_for_exchange(universe_def.exchange.value)
         return market.code if market is not None else None
     if getattr(universe_def, "index", None):
-        market = market_registry.market_for_index(universe_def.index.value)
-        return market.code if market is not None else None
+        return index_registry.market_for(universe_def.index.value)
     return None
 
 
@@ -169,7 +169,10 @@ async def create_scan(
         universe_key=universe_def.key(),
         universe_type=universe_def.type.value,
         universe_market=universe_def.market.value if universe_def.market else None,
-        universe_exchange=universe_def.exchange.value if universe_def.exchange else None,
+        universe_exchange=(
+            universe_def.mic
+            or (universe_def.exchange.value if universe_def.exchange else None)
+        ),
         universe_index=universe_def.index.value if universe_def.index else None,
         universe_symbols=universe_def.symbols,
         screeners=request.screeners,

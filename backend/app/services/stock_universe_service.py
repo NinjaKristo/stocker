@@ -3614,6 +3614,7 @@ class StockUniverseService:
         db: Session,
         market: Optional[str] = None,
         exchange: Optional[str] = None,
+        listing_tier: Optional[str] = None,
         sector: Optional[str] = None,
         min_market_cap: Optional[float] = None,
         sp500_only: bool = False,
@@ -3627,6 +3628,7 @@ class StockUniverseService:
             db: Database session
             market: Optional market filter (US, HK, JP, TW)
             exchange: Optional exchange filter (NYSE, NASDAQ, AMEX)
+            listing_tier: Optional canonical listing tier filter
             sector: Optional sector filter
             min_market_cap: Optional minimum market cap filter
             sp500_only: If True, only return S&P 500 stocks (legacy path;
@@ -3700,6 +3702,9 @@ class StockUniverseService:
             if exchange:
                 query = query.filter(StockUniverse.exchange == exchange.upper())
 
+            if listing_tier:
+                query = query.filter(StockUniverse.listing_tier == listing_tier)
+
             if sector:
                 query = query.filter(StockUniverse.sector == sector)
 
@@ -3715,10 +3720,11 @@ class StockUniverseService:
             symbols = [row[0] for row in query.all()]
 
             logger.info(
-                "Retrieved %d active symbols (market=%s, exchange=%s, sector=%s, index=%s)",
+                "Retrieved %d active symbols (market=%s, exchange=%s, tier=%s, sector=%s, index=%s)",
                 len(symbols),
                 market,
                 exchange,
+                listing_tier,
                 sector,
                 resolved_index,
             )

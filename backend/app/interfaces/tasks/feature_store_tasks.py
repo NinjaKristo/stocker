@@ -623,7 +623,8 @@ def _create_auto_scan_for_published_run(
                     universe_def.market.value if getattr(universe_def, "market", None) else None
                 ),
                 universe_exchange=(
-                    universe_def.exchange.value if universe_def.exchange else None
+                    universe_def.mic
+                    or (universe_def.exchange.value if universe_def.exchange else None)
                 ),
                 universe_index=(
                     universe_def.index.value if universe_def.index else None

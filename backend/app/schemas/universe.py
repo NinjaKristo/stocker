@@ -10,6 +10,11 @@ from typing import List, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from ..domain.markets.catalog import get_market_catalog
+from ..domain.markets.mic_aliases import mic_alias_registry
+from ..domain.universe import listing_tier_registry
+from ..domain.universe.indexes import index_registry
+
 
 class UniverseType(str, Enum):
     """Type of stock universe to scan."""
@@ -21,55 +26,49 @@ class UniverseType(str, Enum):
     TEST = "test"
 
 
-class Market(str, Enum):
-    """Supported market scopes."""
-    US = "US"
-    HK = "HK"
-    IN = "IN"
-    JP = "JP"
-    KR = "KR"
-    TW = "TW"
-    CN = "CN"
-    CA = "CA"
-    DE = "DE"
-    SG = "SG"
+def _enum_member_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in value.upper()).strip("_")
 
 
-class Exchange(str, Enum):
-    """Supported stock exchanges."""
-    NYSE = "NYSE"
-    NASDAQ = "NASDAQ"
-    AMEX = "AMEX"
-    KOSPI = "KOSPI"
-    KOSDAQ = "KOSDAQ"
-    SSE = "SSE"
-    SZSE = "SZSE"
-    BJSE = "BJSE"
-    SGX = "SGX"
-    SES = "SES"
-    TSX = "TSX"
-    TSXV = "TSXV"
-    XSES = "XSES"
+def _make_str_enum(name: str, values: tuple[str, ...] | list[str]) -> type[Enum]:
+    members = {_enum_member_name(value): value for value in values}
+    return Enum(name, members, type=str, module=__name__)
 
 
-class IndexName(str, Enum):
-    """Supported stock market indices.
+Market = _make_str_enum(
+    "Market",
+    get_market_catalog().supported_market_codes(),
+)
 
-    ``SP500`` membership is stored on ``StockUniverse.is_sp500`` (legacy).
-    Asia indices (``HSI``, ``NIKKEI225``, ``TAIEX``, ``STI``) resolve via the
-    ``stock_universe_index_membership`` table so adding future indices
-    only requires data, not a schema migration. ``TAIEX`` is narrowed to
-    the top-50 constituents by weight to keep the scan set comparable to
-    HSI/Nikkei-225 rather than near-whole-market TW coverage.
-    """
-    SP500 = "SP500"
-    HSI = "HSI"
-    NIKKEI225 = "NIKKEI225"
-    TAIEX = "TAIEX"
-    STI = "STI"
-    DAX = "DAX"
-    MDAX = "MDAX"
-    SDAX = "SDAX"
+
+Exchange = _make_str_enum(
+    "Exchange",
+    mic_alias_registry.aliases(),
+)
+
+
+IndexName = _make_str_enum(
+    "IndexName",
+    index_registry.supported_index_keys(),
+)
+
+
+def _parse_market_key_components(universe_key: str | None) -> dict[str, str]:
+    if not isinstance(universe_key, str):
+        return {}
+    parts = [part.strip() for part in universe_key.split(":") if part.strip()]
+    if len(parts) < 2 or parts[0].lower() != "market":
+        return {}
+
+    components: dict[str, str] = {"market": parts[1].upper()}
+    for index in range(2, len(parts) - 1, 2):
+        name = parts[index].lower()
+        value = parts[index + 1]
+        if name == "mic":
+            components["mic"] = value.upper()
+        elif name == "tier":
+            components["tier"] = value
+    return components
 
 
 class UniverseDefinition(BaseModel):
@@ -85,10 +84,28 @@ class UniverseDefinition(BaseModel):
     """
     type: UniverseType
     market: Optional[Market] = None
+    mic: Optional[str] = None
     exchange: Optional[Exchange] = None
     index: Optional[IndexName] = None
+    listing_tier: Optional[str] = None
     symbols: Optional[List[str]] = None
     allow_inactive_symbols: bool = False
+
+    @field_validator("mic", mode="before")
+    @classmethod
+    def normalize_mic(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().upper()
+        return normalized or None
+
+    @field_validator("listing_tier", mode="before")
+    @classmethod
+    def normalize_listing_tier_input(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip()
+        return normalized or None
 
     @field_validator("symbols", mode="before")
     @classmethod
@@ -116,53 +133,135 @@ class UniverseDefinition(BaseModel):
             if (
                 self.exchange is not None
                 or self.market is not None
+                or self.mic is not None
                 or self.index is not None
+                or self.listing_tier is not None
                 or self.symbols is not None
                 or self.allow_inactive_symbols
             ):
-                raise ValueError("ALL universe must not specify market, exchange, index, or symbols")
+                raise ValueError(
+                    "ALL universe must not specify market, mic, exchange, index, "
+                    "listing_tier, or symbols"
+                )
 
         elif t == UniverseType.MARKET:
             if self.market is None:
                 raise ValueError("MARKET universe requires 'market' field")
             if (
-                self.exchange is not None
-                or self.index is not None
+                self.index is not None
                 or self.symbols is not None
                 or self.allow_inactive_symbols
             ):
-                raise ValueError("MARKET universe must not specify exchange, index, or symbols")
+                raise ValueError("MARKET universe must not specify index or symbols")
+            self._validate_market_mic_and_listing_tier()
 
         elif t == UniverseType.EXCHANGE:
             if self.exchange is None:
                 raise ValueError("EXCHANGE universe requires 'exchange' field")
             if (
-                self.index is not None
+                self.mic is not None
+                or self.index is not None
+                or self.listing_tier is not None
                 or self.symbols is not None
                 or self.allow_inactive_symbols
             ):
-                raise ValueError("EXCHANGE universe must not specify index or symbols")
+                raise ValueError(
+                    "EXCHANGE universe must not specify mic, index, listing_tier, "
+                    "or symbols"
+                )
+            self._validate_legacy_exchange_scope()
 
         elif t == UniverseType.INDEX:
             if self.index is None:
                 raise ValueError("INDEX universe requires 'index' field")
             if (
                 self.market is not None
+                or self.mic is not None
                 or self.exchange is not None
+                or self.listing_tier is not None
                 or self.symbols is not None
                 or self.allow_inactive_symbols
             ):
-                raise ValueError("INDEX universe must not specify market, exchange, or symbols")
+                raise ValueError(
+                    "INDEX universe must not specify market, mic, exchange, "
+                    "listing_tier, or symbols"
+                )
 
         elif t in (UniverseType.CUSTOM, UniverseType.TEST):
             if not self.symbols:
                 raise ValueError(f"{t.value.upper()} universe requires a non-empty 'symbols' list")
             if len(self.symbols) > 500:
                 raise ValueError(f"Symbol list too long ({len(self.symbols)}). Maximum is 500.")
-            if self.market is not None or self.exchange is not None or self.index is not None:
-                raise ValueError(f"{t.value.upper()} universe must not specify market, exchange, or index")
+            if (
+                self.market is not None
+                or self.mic is not None
+                or self.exchange is not None
+                or self.index is not None
+                or self.listing_tier is not None
+            ):
+                raise ValueError(
+                    f"{t.value.upper()} universe must not specify market, mic, "
+                    "exchange, index, or listing_tier"
+                )
 
         return self
+
+    def _validate_market_mic_and_listing_tier(self) -> None:
+        market_code = self.market.value
+        market_entry = get_market_catalog().get(market_code)
+
+        if self.mic is not None and self.mic not in market_entry.mics:
+            supported = ", ".join(market_entry.mics)
+            raise ValueError(
+                f"Unsupported MIC {self.mic!r} for market {market_code}. "
+                f"Supported: {supported}"
+            )
+
+        if self.exchange is not None:
+            exchange_alias = self.exchange.value
+            resolved = mic_alias_registry.resolve(market_code, exchange_alias)
+            if resolved is None:
+                raise ValueError(
+                    f"Unsupported exchange alias {exchange_alias!r} for market "
+                    f"{market_code}"
+                )
+            if self.mic is not None and self.mic != resolved.mic:
+                raise ValueError(
+                    f"MIC {self.mic!r} conflicts with exchange alias "
+                    f"{exchange_alias!r} resolved MIC {resolved.mic!r}"
+                )
+            self.mic = resolved.mic
+
+        if self.listing_tier is not None:
+            normalized_tier = listing_tier_registry.normalize(
+                market_code,
+                self.listing_tier,
+                mic=self.mic,
+            )
+            if normalized_tier is None:
+                scope = f"{market_code}/{self.mic}" if self.mic else market_code
+                raise ValueError(
+                    f"Unsupported listing_tier {self.listing_tier!r} for {scope}"
+                )
+            self.listing_tier = normalized_tier
+
+    def _validate_legacy_exchange_scope(self) -> None:
+        exchange_alias = self.exchange.value
+        if self.market is not None:
+            resolved = mic_alias_registry.resolve(self.market.value, exchange_alias)
+            if resolved is None:
+                raise ValueError(
+                    f"Unsupported exchange alias {exchange_alias!r} for market "
+                    f"{self.market.value}"
+                )
+            return
+
+        if mic_alias_registry.is_ambiguous(exchange_alias):
+            raise ValueError(
+                f"Ambiguous exchange alias {exchange_alias!r} requires market context"
+            )
+        if mic_alias_registry.resolve_global(exchange_alias) is None:
+            raise ValueError(f"Unsupported exchange alias {exchange_alias!r}")
 
     def key(self) -> str:
         """
@@ -180,7 +279,12 @@ class UniverseDefinition(BaseModel):
         if self.type == UniverseType.ALL:
             return "all"
         elif self.type == UniverseType.MARKET:
-            return f"market:{self.market.value}"
+            key = f"market:{self.market.value}"
+            if self.mic is not None:
+                key = f"{key}:mic:{self.mic}"
+            if self.listing_tier is not None:
+                key = f"{key}:tier:{self.listing_tier}"
+            return key
         elif self.type == UniverseType.EXCHANGE:
             if self.market is not None and self.market != Market.US:
                 return f"exchange:{self.market.value}:{self.exchange.value}"
@@ -218,11 +322,7 @@ class UniverseDefinition(BaseModel):
         elif self.type == UniverseType.EXCHANGE:
             return self.exchange.value
         elif self.type == UniverseType.INDEX:
-            if self.index == IndexName.SP500:
-                return "S&P 500"
-            if self.index == IndexName.STI:
-                return "Straits Times Index"
-            return self.index.value
+            return index_registry.label_for(self.index.value) or self.index.value
         elif self.type == UniverseType.CUSTOM:
             n = len(self.symbols)
             suffix = ", incl. inactive" if self.allow_inactive_symbols else ""
@@ -264,18 +364,22 @@ class UniverseDefinition(BaseModel):
 
             resolved_market = universe_market
             market = exchange = index = None
+            mic = listing_tier = None
             symbols: Optional[List[str]] = None
 
             if parsed_type == UniverseType.MARKET:
+                key_parts = _parse_market_key_components(universe_key)
                 if (
                     resolved_market is None
-                    and isinstance(universe_key, str)
-                    and universe_key.lower().startswith("market:")
+                    and key_parts.get("market")
                 ):
-                    resolved_market = universe_key.split(":", 1)[1].upper()
+                    resolved_market = key_parts["market"]
                 market = Market(resolved_market) if resolved_market else None
+                mic = key_parts.get("mic")
+                listing_tier = key_parts.get("tier")
+                if mic is None and universe_exchange:
+                    exchange = Exchange(universe_exchange)
             elif parsed_type == UniverseType.EXCHANGE:
-                market = Market(resolved_market) if resolved_market else None
                 exchange = Exchange(universe_exchange) if universe_exchange else None
             elif parsed_type == UniverseType.INDEX:
                 index = IndexName(universe_index) if universe_index else None
@@ -285,8 +389,10 @@ class UniverseDefinition(BaseModel):
             return cls(
                 type=parsed_type,
                 market=market,
+                mic=mic,
                 exchange=exchange,
                 index=index,
+                listing_tier=listing_tier,
                 symbols=symbols,
             )
         except Exception:
@@ -321,19 +427,13 @@ class UniverseDefinition(BaseModel):
         """
         u = universe.strip().lower()
 
-        exchange_map = {
-            "nyse": Exchange.NYSE,
-            "nasdaq": Exchange.NASDAQ,
-            "amex": Exchange.AMEX,
-            "sgx": Exchange.SGX,
-            "ses": Exchange.SES,
-            "xses": Exchange.XSES,
-        }
+        exchange_map = {exchange.value.lower(): exchange for exchange in Exchange}
         market_map = {market.value.lower(): market for market in Market}
         valid_markets = ", ".join(market.value for market in Market)
         valid_market_universes = ", ".join(
             f"market:{market.value.lower()}" for market in Market
         )
+        index_key = index_registry.normalize(u)
 
         if u == "all":
             return cls(type=UniverseType.ALL)
@@ -344,10 +444,8 @@ class UniverseDefinition(BaseModel):
             raise ValueError(f"Unknown market '{raw_market}'. Valid values: {valid_markets}")
         elif u in exchange_map:
             return cls(type=UniverseType.EXCHANGE, exchange=exchange_map[u])
-        elif u == "sp500":
-            return cls(type=UniverseType.INDEX, index=IndexName.SP500)
-        elif u == "sti":
-            return cls(type=UniverseType.INDEX, index=IndexName.STI)
+        elif index_key is not None:
+            return cls(type=UniverseType.INDEX, index=IndexName(index_key))
         elif u == "custom":
             return cls(type=UniverseType.CUSTOM, symbols=symbols or [])
         elif u == "test":

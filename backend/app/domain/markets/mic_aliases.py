@@ -81,6 +81,14 @@ class MicAliasRegistry:
         resolved = self.resolve_global(alias)
         return resolved.market if resolved else None
 
+    def aliases(self, market: str | None = None) -> tuple[str, ...]:
+        market_code = str(market or "").strip().upper()
+        return tuple(
+            alias
+            for scoped_market, alias in self._by_market_alias
+            if not market_code or scoped_market == market_code
+        )
+
     def is_ambiguous(self, alias: str | None) -> bool:
         normalized_alias = self._normalize_alias(alias)
         if not normalized_alias:

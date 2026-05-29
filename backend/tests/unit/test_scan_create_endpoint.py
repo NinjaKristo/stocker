@@ -233,8 +233,10 @@ async def test_create_scan_accepts_market_universe_def(client):
     assert payload["universe_def"] == {
         "type": "market",
         "market": "HK",
+        "mic": None,
         "exchange": None,
         "index": None,
+        "listing_tier": None,
         "symbols": None,
         "allow_inactive_symbols": False,
     }
