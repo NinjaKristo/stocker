@@ -7,11 +7,13 @@ from typing import Any, Iterable, Mapping, Protocol
 
 from sqlalchemy.orm import Session
 
+from ..domain.markets.mic_aliases import mic_alias_registry
 from ..domain.universe.ingestion import (
     CanonicalUniverseIngestionResult,
     CanonicalUniverseRow,
     RejectedUniverseRow,
     UniverseLifecycleMetadata,
+    UniverseSourceProvenance,
 )
 from ..models.stock_universe import (
     StockUniverse,
@@ -32,6 +34,125 @@ class UniverseCanonicalizer(Protocol):
         source_metadata: Mapping[str, Any] | None = None,
     ) -> CanonicalUniverseIngestionResult:
         """Return accepted/rejected canonical rows for one source snapshot."""
+
+
+class UniverseBeforeReconciliationHook(Protocol):
+    def __call__(
+        self,
+        db: Session,
+        canonical_rows: tuple[CanonicalUniverseRow, ...],
+        *,
+        now: datetime,
+    ) -> Mapping[str, Any]:
+        """Persist market-specific side effects before reconciliation is recorded."""
+
+
+class FlatUniverseCanonicalizerAdapter:
+    """Adapt legacy flat canonicalizer rows to shared Universe ingestion models."""
+
+    def __init__(
+        self,
+        canonicalizer: Any,
+        *,
+        extra_source_metadata_fields: Iterable[str] = (),
+    ) -> None:
+        self._canonicalizer = canonicalizer
+        self._extra_source_metadata_fields = tuple(extra_source_metadata_fields)
+
+    def canonicalize_rows(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        *,
+        source_name: str,
+        snapshot_id: str,
+        snapshot_as_of: str | None = None,
+        source_metadata: Mapping[str, Any] | None = None,
+    ) -> CanonicalUniverseIngestionResult:
+        result = self._canonicalizer.canonicalize_rows(
+            rows,
+            source_name=source_name,
+            snapshot_id=snapshot_id,
+            snapshot_as_of=snapshot_as_of,
+            source_metadata=source_metadata,
+        )
+        if isinstance(result, CanonicalUniverseIngestionResult):
+            return result
+        return CanonicalUniverseIngestionResult(
+            canonical_rows=tuple(
+                self._canonical_row(row) for row in result.canonical_rows
+            ),
+            rejected_rows=tuple(
+                self._rejected_row(row) for row in result.rejected_rows
+            ),
+        )
+
+    def _canonical_row(self, row: Any) -> CanonicalUniverseRow:
+        return self.canonical_row_from_flat(
+            row,
+            extra_source_metadata_fields=self._extra_source_metadata_fields,
+        )
+
+    @staticmethod
+    def canonical_row_from_flat(
+        row: Any,
+        *,
+        extra_source_metadata_fields: Iterable[str] = (),
+    ) -> CanonicalUniverseRow:
+        source_metadata = dict(getattr(row, "source_metadata", {}) or {})
+        market = row.market
+        source_exchange = str(getattr(row, "exchange", "") or "").strip().upper()
+        mic = FlatUniverseCanonicalizerAdapter._canonical_mic(market, source_exchange)
+        if source_exchange and source_exchange != mic:
+            source_metadata.setdefault("source_exchange", source_exchange)
+        for field_name in extra_source_metadata_fields:
+            value = getattr(row, field_name, None)
+            if value is not None:
+                source_metadata[field_name] = value
+
+        return CanonicalUniverseRow(
+            symbol=row.symbol,
+            name=row.name,
+            market=market,
+            mic=mic,
+            currency=row.currency,
+            timezone=row.timezone,
+            local_code=row.local_code,
+            listing_tier=getattr(row, "listing_tier", None),
+            sector=row.sector,
+            industry=row.industry,
+            market_cap=row.market_cap,
+            provenance=UniverseSourceProvenance(
+                source_name=row.source_name,
+                source_symbol=row.source_symbol,
+                source_row_number=row.source_row_number,
+                snapshot_id=row.snapshot_id,
+                snapshot_as_of=row.snapshot_as_of,
+                source_metadata=source_metadata,
+                lineage_hash=row.lineage_hash,
+                row_hash=row.row_hash,
+            ),
+        )
+
+    @staticmethod
+    def _canonical_mic(market: str, exchange: str) -> str:
+        resolved = mic_alias_registry.resolve(market, exchange)
+        if resolved is not None:
+            return resolved.mic
+        return str(exchange or "").strip().upper()
+
+    @staticmethod
+    def _rejected_row(row: Any) -> RejectedUniverseRow:
+        return FlatUniverseCanonicalizerAdapter.rejected_row_from_flat(row)
+
+    @staticmethod
+    def rejected_row_from_flat(row: Any) -> RejectedUniverseRow:
+        return RejectedUniverseRow(
+            source_row_number=row.source_row_number,
+            source_symbol=row.source_symbol,
+            reason=row.reason,
+            source_name=getattr(row, "source_name", None),
+            snapshot_id=getattr(row, "snapshot_id", None),
+        )
 
 
 class StockUniversePersistenceService(Protocol):
@@ -123,6 +244,7 @@ class UniversePersistence:
         snapshot_id: str,
         result: CanonicalUniverseIngestionResult,
         trigger_source: str,
+        before_reconciliation: UniverseBeforeReconciliationHook | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
         now = now or datetime.utcnow()
@@ -186,6 +308,12 @@ class UniversePersistence:
         self._service._bulk_insert_records(db, new_rows)
         self._service._bulk_insert_records(db, new_events)
 
+        extra_summary: dict[str, Any] = {}
+        if before_reconciliation is not None:
+            extra_summary.update(
+                dict(before_reconciliation(db, canonical_rows, now=now))
+            )
+
         reconciliation = self._service._record_market_reconciliation_run(
             db,
             market=market,
@@ -207,6 +335,7 @@ class UniversePersistence:
             "added": added_count,
             "updated": updated_count,
             "reconciliation": reconciliation,
+            "extra_summary": extra_summary,
         }
 
     def _update_existing_row(
@@ -377,12 +506,19 @@ class UniverseIngestionPipeline:
         *,
         canonicalizers: Mapping[str, UniverseCanonicalizer],
         persistence: UniversePersistence,
+        before_reconciliation_hooks: (
+            Mapping[str, UniverseBeforeReconciliationHook] | None
+        ) = None,
     ) -> None:
         self._canonicalizers = {
             str(market).strip().upper(): canonicalizer
             for market, canonicalizer in canonicalizers.items()
         }
         self._persistence = persistence
+        self._before_reconciliation_hooks = {
+            str(market).strip().upper(): hook
+            for market, hook in (before_reconciliation_hooks or {}).items()
+        }
 
     def ingest_snapshot_rows(
         self,
@@ -408,6 +544,27 @@ class UniverseIngestionPipeline:
             snapshot_as_of=snapshot_as_of,
             source_metadata=source_metadata,
         )
+        return self.ingest_canonicalized_result(
+            db,
+            market=market_code,
+            source_name=source_name,
+            snapshot_id=snapshot_id,
+            result=result,
+            strict=strict,
+        )
+
+    def ingest_canonicalized_result(
+        self,
+        db: Session,
+        *,
+        market: str,
+        source_name: str,
+        snapshot_id: str,
+        result: CanonicalUniverseIngestionResult,
+        strict: bool = True,
+        extra_summary: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        market_code = str(market or "").strip().upper()
         if strict and result.rejected_rows:
             sample = self._rejected_sample(result.rejected_rows)
             raise ValueError(
@@ -423,7 +580,13 @@ class UniverseIngestionPipeline:
             snapshot_id=snapshot_id,
             result=result,
             trigger_source=trigger_source,
+            before_reconciliation=self._before_reconciliation_hooks.get(market_code),
         )
+        if extra_summary:
+            persisted["extra_summary"] = {
+                **dict(persisted.get("extra_summary") or {}),
+                **dict(extra_summary),
+            }
         return self._summary(
             market=market_code,
             source_name=source_name,
@@ -450,7 +613,7 @@ class UniverseIngestionPipeline:
         details_limit = 25
         canonical_preview = result.canonical_rows[:details_limit]
         rejected_preview = result.rejected_rows[:details_limit]
-        return {
+        summary = {
             "added": persisted["added"],
             "updated": persisted["updated"],
             "total": len(result.canonical_rows),
@@ -484,3 +647,5 @@ class UniverseIngestionPipeline:
                 "version": "universe-ingestion-pipeline-v1",
             },
         }
+        summary.update(dict(persisted.get("extra_summary") or {}))
+        return summary

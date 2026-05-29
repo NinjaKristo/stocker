@@ -40,11 +40,150 @@ class _FakeBulkFetcher:
         return {symbol: self._results.get(symbol, {"has_error": True, "price_data": None}) for symbol in symbols}
 
 
+class _RecordingUniversePipeline:
+    def __init__(self):
+        self.calls = []
+        self.canonicalized_calls = []
+
+    def ingest_snapshot_rows(self, db, *, market, rows, **kwargs):
+        self.calls.append(
+            {
+                "market": market,
+                "rows": list(rows),
+                **kwargs,
+            }
+        )
+        return {
+            "added": 0,
+            "updated": 0,
+            "total": 0,
+            "rejected": 0,
+            "source_name": kwargs["source_name"],
+            "snapshot_id": kwargs["snapshot_id"],
+            "canonical_rows": [],
+            "rejected_rows": [],
+            "reconciliation": {},
+            "pipeline": {"market": market},
+        }
+
+    def ingest_canonicalized_result(self, db, *, market, result, **kwargs):
+        self.canonicalized_calls.append(
+            {
+                "market": market,
+                "result": result,
+                **kwargs,
+            }
+        )
+        return {
+            "added": 0,
+            "updated": 0,
+            "total": len(result.canonical_rows),
+            "rejected": len(result.rejected_rows),
+            "coverage_rejected": dict(kwargs.get("extra_summary") or {}).get(
+                "coverage_rejected",
+                0,
+            ),
+            "source_name": kwargs["source_name"],
+            "snapshot_id": kwargs["snapshot_id"],
+            "canonical_rows": [],
+            "rejected_rows": [],
+            "reconciliation": {},
+            "pipeline": {"market": market},
+        }
+
+
 def _make_session():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     return TestingSessionLocal
+
+
+@pytest.mark.parametrize(
+    ("market", "method_name"),
+    [
+        ("HK", "ingest_hk_snapshot_rows"),
+        ("JP", "ingest_jp_snapshot_rows"),
+        ("KR", "ingest_kr_snapshot_rows"),
+        ("TW", "ingest_tw_snapshot_rows"),
+        ("CA", "ingest_ca_snapshot_rows"),
+        ("DE", "ingest_de_snapshot_rows"),
+        ("CN", "ingest_cn_snapshot_rows"),
+        ("SG", "ingest_sg_snapshot_rows"),
+    ],
+)
+def test_official_market_ingest_methods_delegate_to_shared_pipeline(
+    market,
+    method_name,
+):
+    TestingSessionLocal = _make_session()
+    db = TestingSessionLocal()
+    service = StockUniverseService()
+    pipeline = _RecordingUniversePipeline()
+    service._universe_ingestion_pipeline = pipeline
+
+    result = getattr(service, method_name)(
+        db,
+        rows=[{"symbol": "TEST", "name": "Test"}],
+        source_name=f"{market.lower()}_reference_bundle",
+        snapshot_id=f"{market.lower()}-snapshot",
+        snapshot_as_of="2026-05-29",
+        source_metadata={"fixture": True},
+        strict=True,
+    )
+
+    assert result["pipeline"]["market"] == market
+    assert pipeline.calls == [
+        {
+            "market": market,
+            "rows": [{"symbol": "TEST", "name": "Test"}],
+            "source_name": f"{market.lower()}_reference_bundle",
+            "snapshot_id": f"{market.lower()}-snapshot",
+            "snapshot_as_of": "2026-05-29",
+            "source_metadata": {"fixture": True},
+            "strict": True,
+        }
+    ]
+    db.close()
+
+
+def test_in_ingest_delegates_filtered_result_to_shared_pipeline():
+    TestingSessionLocal = _make_session()
+    db = TestingSessionLocal()
+    service = StockUniverseService()
+    pipeline = _RecordingUniversePipeline()
+    service._universe_ingestion_pipeline = pipeline
+
+    result = service.ingest_in_snapshot_rows(
+        db,
+        rows=[
+            {
+                "symbol": "RELIANCE.NS",
+                "name": "Reliance Industries Limited",
+                "exchange": "XNSE",
+                "sector": "",
+                "industry": "",
+                "market_cap": None,
+                "isin": "INE002A01018",
+            },
+        ],
+        source_name="in_reference_bundle",
+        snapshot_id="in-reference-bundle-2026-04-21",
+        snapshot_as_of="2026-04-21",
+        source_metadata={"overlap_isin_count": 0},
+        strict=True,
+    )
+
+    assert result["pipeline"]["market"] == "IN"
+    assert len(pipeline.canonicalized_calls) == 1
+    call = pipeline.canonicalized_calls[0]
+    assert call["market"] == "IN"
+    assert call["strict"] is False
+    assert call["extra_summary"] == {"coverage_rejected": 0}
+    assert call["result"].canonical_rows[0].symbol == "RELIANCE.NS"
+    assert call["result"].canonical_rows[0].mic == "XNSE"
+    assert call["result"].rejected_rows == ()
+    db.close()
 
 
 def _assert_bulk_universe_rows_prepopulate_required_defaults(objects):
@@ -1079,11 +1218,11 @@ def test_ingest_tw_from_csv_normalizes_twse_tpex_variants_and_lineage():
     assert stats["updated"] == 0
     assert stats["total"] == 2
     assert stats["rejected"] == 0
-    assert twse_row.exchange == "TWSE"
+    assert twse_row.exchange == "XTAI"
     assert twse_row.market == "TW"
     assert twse_row.currency == "TWD"
     assert twse_row.timezone == "Asia/Taipei"
-    assert tpex_row.exchange == "TPEX"
+    assert tpex_row.exchange == "XTAI"
     assert tpex_row.market == "TW"
     assert tpex_row.symbol == "3008.TWO"
     assert tpex_row.source == "tw_ingest"
@@ -1129,7 +1268,7 @@ def test_ingest_tw_from_csv_reactivates_existing_inactive_symbol():
     assert stats["updated"] == 1
     assert row.is_active is True
     assert row.status == UNIVERSE_STATUS_ACTIVE
-    assert row.exchange == "TPEX"
+    assert row.exchange == "XTAI"
     assert row.local_code == "3008"
     db.close()
 
@@ -1157,7 +1296,7 @@ def test_ingest_tw_from_csv_infers_tpex_exchange_from_symbol_when_exchange_missi
     assert stats["updated"] == 0
     assert stats["total"] == 1
     assert stats["rejected"] == 0
-    assert row.exchange == "TPEX"
+    assert row.exchange == "XTAI"
     assert row.market == "TW"
     assert row.local_code == "3008"
     db.close()

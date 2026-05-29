@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -25,6 +26,7 @@ from app.models.stock_universe import (
 )
 from app.services.stock_universe_service import StockUniverseService
 from app.services.universe_ingestion_pipeline import (
+    FlatUniverseCanonicalizerAdapter,
     UniverseIngestionPipeline,
     UniversePersistence,
 )
@@ -40,10 +42,92 @@ class _FakeCanonicalizer:
         return self.result
 
 
+class _FakeFlatCanonicalizer:
+    def canonicalize_rows(self, rows, **kwargs):
+        return SimpleNamespace(
+            canonical_rows=(
+                SimpleNamespace(
+                    symbol="0700.HK",
+                    name="Tencent",
+                    market="HK",
+                    exchange="XHKG",
+                    currency="HKD",
+                    timezone="Asia/Hong_Kong",
+                    local_code="0700",
+                    sector="Communication Services",
+                    industry="Internet",
+                    market_cap=100.0,
+                    source_name="hkex_official",
+                    source_symbol="700",
+                    source_row_number=1,
+                    snapshot_id="hk-2026-05-29",
+                    snapshot_as_of="2026-05-29",
+                    source_metadata={"row_counts": {"xhkg": 1}},
+                    lineage_hash="lineage-0700",
+                    row_hash="row-0700",
+                ),
+            ),
+            rejected_rows=(
+                SimpleNamespace(
+                    source_row_number=2,
+                    source_symbol="BAD",
+                    reason="invalid symbol",
+                ),
+            ),
+        )
+
+
 def _make_session():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+def test_flat_canonicalizer_adapter_returns_shared_ingestion_models() -> None:
+    adapter = FlatUniverseCanonicalizerAdapter(_FakeFlatCanonicalizer())
+
+    result = adapter.canonicalize_rows(
+        [{"symbol": "700"}, {"symbol": "BAD"}],
+        source_name="hkex_official",
+        snapshot_id="hk-2026-05-29",
+        snapshot_as_of="2026-05-29",
+        source_metadata={"row_counts": {"xhkg": 1}},
+    )
+
+    assert isinstance(result, CanonicalUniverseIngestionResult)
+    assert isinstance(result.canonical_rows[0], CanonicalUniverseRow)
+    assert result.canonical_rows[0].mic == "XHKG"
+    assert result.canonical_rows[0].provenance.source_name == "hkex_official"
+    assert result.canonical_rows[0].provenance.row_hash == "row-0700"
+    assert isinstance(result.rejected_rows[0], RejectedUniverseRow)
+
+
+def test_flat_canonicalizer_adapter_resolves_exchange_alias_to_catalog_mic() -> None:
+    row = FlatUniverseCanonicalizerAdapter.canonical_row_from_flat(
+        SimpleNamespace(
+            symbol="3008.TWO",
+            name="Largan Precision",
+            market="TW",
+            exchange="TPEX",
+            currency="TWD",
+            timezone="Asia/Taipei",
+            local_code="3008",
+            sector="Technology",
+            industry="Electronics",
+            market_cap=100.0,
+            source_name="tw_reference_bundle",
+            source_symbol="3008.TWO",
+            source_row_number=1,
+            snapshot_id="tw-2026-05-29",
+            snapshot_as_of="2026-05-29",
+            source_metadata={},
+            lineage_hash="lineage-3008",
+            row_hash="row-3008",
+        )
+    )
+
+    assert row.mic == "XTAI"
+    assert row.provenance.source_metadata["source_exchange"] == "TPEX"
 
 
 def _row(
