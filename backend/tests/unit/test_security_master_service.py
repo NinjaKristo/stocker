@@ -214,6 +214,21 @@ def test_resolve_identity_uses_singapore_suffix_by_exchange_and_market():
     assert by_suffix.canonical_symbol == "C6L.SI"
 
 
+def test_resolve_identity_uses_malaysia_suffix_by_exchange_and_market():
+    resolver = SecurityMasterResolver()
+
+    by_exchange = resolver.resolve_identity(symbol="1155", exchange="KLSE")
+    by_market = resolver.resolve_identity(symbol="1295", market="MY")
+    by_suffix = resolver.resolve_identity(symbol="5347.KL")
+
+    assert by_exchange.market == "MY"
+    assert by_exchange.canonical_symbol == "1155.KL"
+    assert by_exchange.mic == "XKLS"
+    assert by_market.canonical_symbol == "1295.KL"
+    assert by_suffix.market == "MY"
+    assert by_suffix.canonical_symbol == "5347.KL"
+
+
 def test_resolve_identity_uses_canada_and_germany_suffixes_by_exchange():
     resolver = SecurityMasterResolver()
 

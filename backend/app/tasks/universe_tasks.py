@@ -25,7 +25,6 @@ from .transient_database import raise_if_transient_database_error
 
 logger = logging.getLogger(__name__)
 
-_OFFICIAL_SOURCE_MARKETS = frozenset({"HK", "IN", "JP", "KR", "TW", "CN", "CA", "DE", "SG"})
 _OFFICIAL_UNIVERSE_INGEST_METHODS = {
     "HK": "ingest_hk_snapshot_rows",
     "IN": "ingest_in_snapshot_rows",
@@ -36,7 +35,9 @@ _OFFICIAL_UNIVERSE_INGEST_METHODS = {
     "CA": "ingest_ca_snapshot_rows",
     "DE": "ingest_de_snapshot_rows",
     "SG": "ingest_sg_snapshot_rows",
+    "MY": "ingest_my_snapshot_rows",
 }
+_OFFICIAL_SOURCE_MARKETS = frozenset(_OFFICIAL_UNIVERSE_INGEST_METHODS)
 _GITHUB_SYNC_SUCCESS_STATUSES = frozenset({"success", "up_to_date"})
 _OFFICIAL_UNIVERSE_LOCK_RETRY_BASE_SECONDS = 300
 _OFFICIAL_UNIVERSE_LOCK_RETRY_MAX_SECONDS = 1800

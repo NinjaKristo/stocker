@@ -146,6 +146,7 @@ _BENCHMARK_FACTS_BY_MARKET: Mapping[str, BenchmarkFacts] = {
     "CA": BenchmarkFacts("^GSPTSE", "XIU.TO", "index", "etf"),
     "DE": BenchmarkFacts("^GDAXI", "EXS1.DE", "index", "etf"),
     "SG": BenchmarkFacts("^STI", "ES3.SI", "index", "etf"),
+    "MY": BenchmarkFacts("^KLSE", None, "index", None),
 }
 
 

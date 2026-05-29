@@ -15,8 +15,6 @@ cd backend
 python3.11 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -e ../xui-reader
-python -m playwright install chromium
 
 # Configure environment
 cp .env.example .env
@@ -65,21 +63,6 @@ npm run lint     # ESLint
 ```
 
 Requires backend API running on port 8000.
-
-## Twitter/X Ingestion Setup (Optional)
-
-Bootstrap shared xui profile/session state for theme discovery:
-
-```bash
-export XUI_CONFIG_PATH="${XUI_CONFIG_PATH:-$HOME/.stockscanner/xui-reader/config.toml}"
-xui config init --path "$XUI_CONFIG_PATH"
-xui profiles create default --path "$XUI_CONFIG_PATH"
-xui auth login --profile default --path "$XUI_CONFIG_PATH"
-```
-
-Use an app-data path outside the repo so browser session artifacts do not sit in the worktree.
-
-Alternative for Google-linked X accounts: use **Themes > Manage Sources > "Connect From Current Browser"** after loading the unpacked extension from `browser-extension/xui-session-bridge`.
 
 ## macOS Celery Notes
 

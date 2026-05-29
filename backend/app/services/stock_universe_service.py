@@ -50,6 +50,7 @@ from .finviz_universe_ingestion_adapter import finviz_universe_ingestion_adapter
 from .hk_universe_ingestion_adapter import hk_universe_ingestion_adapter
 from .jp_universe_ingestion_adapter import jp_universe_ingestion_adapter
 from .kr_universe_ingestion_adapter import kr_universe_ingestion_adapter
+from .my_universe_ingestion_adapter import my_universe_ingestion_adapter
 from .security_master_service import security_master_resolver
 from .sg_universe_ingestion_adapter import sg_universe_ingestion_adapter
 from .tw_universe_ingestion_adapter import tw_universe_ingestion_adapter
@@ -72,6 +73,7 @@ MARKET_EXCHANGE_FALLBACKS: dict[str, tuple[str, ...]] = {
     "CN": ("SSE", "SZSE", "BJSE", "XSHG"),
     "CA": ("TSX", "TSXV", "XTSE", "XTNX"),
     "SG": ("SGX", "SES", "XSES"),
+    "MY": ("KLSE", "MYX", "XKLS", "BURSA"),
 }
 KR_ACTIVE_UNIVERSE_MIN_COUNT = 2526
 CN_ACTIVE_UNIVERSE_MIN_COUNT = 5217
@@ -94,6 +96,7 @@ class StockUniverseService:
         self._hk_ingestion = hk_universe_ingestion_adapter
         self._jp_ingestion = jp_universe_ingestion_adapter
         self._kr_ingestion = kr_universe_ingestion_adapter
+        self._my_ingestion = my_universe_ingestion_adapter
         self._sg_ingestion = sg_universe_ingestion_adapter
         self._tw_ingestion = tw_universe_ingestion_adapter
         self._universe_ingestion_pipeline = UniverseIngestionPipeline(
@@ -107,6 +110,7 @@ class StockUniverseService:
                 "DE": FlatUniverseCanonicalizerAdapter(self._de_ingestion),
                 "CN": FlatUniverseCanonicalizerAdapter(self._cn_ingestion),
                 "SG": self._sg_ingestion,
+                "MY": FlatUniverseCanonicalizerAdapter(self._my_ingestion),
             },
             persistence=UniversePersistence.for_stock_universe_service(self),
             before_reconciliation_hooks={
@@ -2160,6 +2164,29 @@ class StockUniverseService:
             strict=strict,
         )
 
+    def ingest_my_snapshot_rows(
+        self,
+        db: Session,
+        *,
+        rows: Iterable[dict[str, Any]],
+        source_name: str,
+        snapshot_id: str,
+        snapshot_as_of: str | None = None,
+        source_metadata: Optional[dict[str, Any]] = None,
+        strict: bool = True,
+    ) -> Dict[str, Any]:
+        """Ingest MY rows with deterministic canonicalization and lineage metadata."""
+        return self._ingest_snapshot_rows_via_pipeline(
+            db,
+            market="MY",
+            rows=rows,
+            source_name=source_name,
+            snapshot_id=snapshot_id,
+            snapshot_as_of=snapshot_as_of,
+            source_metadata=source_metadata,
+            strict=strict,
+        )
+
     def populate_from_csv(self, db: Session, csv_content: str) -> Dict:
         """
         Populate stock_universe table from CSV file.
@@ -2721,7 +2748,7 @@ class StockUniverseService:
             1,
         )
         stale_after_seconds = stale_after_hours * 3600
-        reconciliation_markets = {"HK", "IN", "JP", "KR", "TW", "CN", "SG"}
+        reconciliation_markets = {"HK", "IN", "JP", "KR", "TW", "CN", "CA", "DE", "SG", "MY"}
 
         by_market: Dict[str, Dict[str, Any]] = {
             market: {
@@ -2731,7 +2758,7 @@ class StockUniverseService:
                 "latest_seen_in_source_at": None,
                 "latest_snapshot": None,
             }
-            for market in ("US", "HK", "IN", "JP", "KR", "TW", "CN", "CA", "DE", "SG")
+            for market in ("US", "HK", "IN", "JP", "KR", "TW", "CN", "CA", "DE", "SG", "MY")
         }
 
         universe_rows = db.query(

@@ -12,7 +12,7 @@ Fundamentals providers have different geographic coverage:
 - ``alphavantage`` : US-only free tier; overseas coverage is paid/limited and
   is not currently wired up in the hot path.
 - ``yfinance``     : Global — supports local-suffix symbols (``.HK``, ``.T``,
-  ``.TW``/``.TWO``, ``.TO``/``.V``) via the canonical symbols produced by
+  ``.TW``/``.TWO``, ``.TO``/``.V``, ``.KL``) via the canonical symbols produced by
   ``SecurityMasterService``.
 - ``krx``          : Korea Exchange data through ``pykrx``.
 - ``opendart``     : Korea FSS OpenDART statement data when configured.
@@ -108,6 +108,7 @@ MARKET_CN = "CN"
 MARKET_CA = "CA"
 MARKET_DE = "DE"
 MARKET_SG = "SG"
+MARKET_MY = "MY"
 
 KNOWN_MARKETS: FrozenSet[str] = SUPPORTED_MARKET_CODES
 

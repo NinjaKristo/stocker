@@ -158,6 +158,9 @@ market_symbol_suffix_registry = MarketSymbolSuffixRegistry(
             "SG", ".SI", ("SGX", "SES", "XSES"), mic="XSES", is_default=True
         ),
         MarketSymbolSuffixDefinition(
+            "MY", ".KL", ("KLSE", "MYX", "XKLS", "BURSA"), mic="XKLS", is_default=True
+        ),
+        MarketSymbolSuffixDefinition(
             "CA", ".TO", ("TSX", "XTSE"), mic="XTSE", is_default=True
         ),
         MarketSymbolSuffixDefinition("CA", ".V", ("TSXV", "XTNX"), mic="XTNX"),

@@ -211,6 +211,7 @@ provider_data_plan_registry = ProviderDataPlanRegistry(
         ("CA", DATASET_FUNDAMENTALS): (_yf(),),
         ("DE", DATASET_FUNDAMENTALS): (_yf(),),
         ("SG", DATASET_FUNDAMENTALS): (_yf(),),
+        ("MY", DATASET_FUNDAMENTALS): (_yf(),),
         ("US", DATASET_PRICES): (_yf(batch_size=150),),
         ("HK", DATASET_PRICES): (_yf(batch_size=50),),
         ("IN", DATASET_PRICES): (_yf(batch_size=50),),
@@ -228,6 +229,7 @@ provider_data_plan_registry = ProviderDataPlanRegistry(
         ("CA", DATASET_PRICES): (_yf(batch_size=50),),
         ("DE", DATASET_PRICES): (_yf(batch_size=50),),
         ("SG", DATASET_PRICES): (_yf(batch_size=50),),
+        ("MY", DATASET_PRICES): (_yf(batch_size=50),),
     },
     overrides={
         ("CN", "XBSE", DATASET_FUNDAMENTALS): (

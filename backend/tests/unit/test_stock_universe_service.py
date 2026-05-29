@@ -107,6 +107,7 @@ def _make_session():
         ("DE", "ingest_de_snapshot_rows"),
         ("CN", "ingest_cn_snapshot_rows"),
         ("SG", "ingest_sg_snapshot_rows"),
+        ("MY", "ingest_my_snapshot_rows"),
     ],
 )
 def test_official_market_ingest_methods_delegate_to_shared_pipeline(

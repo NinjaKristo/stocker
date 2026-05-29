@@ -161,5 +161,11 @@ index_registry = IndexRegistry(
             market="SG",
             aliases=("STRAITS TIMES",),
         ),
+        IndexDefinition(
+            key="FBMKLCI",
+            label="FTSE Bursa Malaysia KLCI",
+            market="MY",
+            aliases=("FBM KLCI", "KLCI", "KLSE"),
+        ),
     )
 )

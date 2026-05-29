@@ -119,5 +119,6 @@ mic_alias_registry = MicAliasRegistry(
         MicAliasDefinition("DE", "XETR", ("XETRA",)),
         MicAliasDefinition("DE", "XFRA", ("FRA", "FWB")),
         MicAliasDefinition("SG", "XSES", ("SGX", "SES")),
+        MicAliasDefinition("MY", "XKLS", ("KLSE", "MYX", "BURSA")),
     )
 )
