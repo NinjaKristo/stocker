@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from app.main import app
 from app.api.v1.scans import _resolve_scan_guard_market
-from app.domain.markets import market_registry
+from app.domain.markets import market_registry, mic_alias_registry
 from app.schemas.universe import Exchange, Market, UniverseDefinition, UniverseType
 from app.services import server_auth
 from app.wiring.bootstrap import get_create_scan_use_case, get_uow
@@ -80,7 +80,7 @@ def test_scan_guard_requires_market_context_for_ambiguous_bse_alias():
 def test_scan_guard_resolves_registry_exchanges_and_indexes():
     for profile in market_registry.profiles():
         for exchange in profile.exchanges:
-            if exchange == "BSE":
+            if mic_alias_registry.is_ambiguous(exchange):
                 continue
             universe = SimpleNamespace(market=None, exchange=SimpleNamespace(value=exchange), index=None)
             assert _resolve_scan_guard_market(universe) == profile.market.code

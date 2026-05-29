@@ -17,6 +17,11 @@ from .mic_aliases import (
     mic_alias_registry,
 )
 from .registry import MarketProfile, MarketRegistry, market_registry
+from .symbol_suffixes import (
+    MarketSymbolSuffixDefinition,
+    MarketSymbolSuffixRegistry,
+    market_symbol_suffix_registry,
+)
 
 __all__ = [
     "MARKET_CATALOG",
@@ -31,9 +36,12 @@ __all__ = [
     "MicAliasDefinition",
     "MicAliasRegistry",
     "MicAliasResolution",
+    "MarketSymbolSuffixDefinition",
+    "MarketSymbolSuffixRegistry",
     "SUPPORTED_MARKET_CODES",
     "UnsupportedMarketError",
     "get_market_catalog",
     "market_registry",
     "mic_alias_registry",
+    "market_symbol_suffix_registry",
 ]

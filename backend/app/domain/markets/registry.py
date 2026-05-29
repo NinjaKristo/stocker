@@ -37,7 +37,6 @@ class MarketRegistry:
     def __init__(self, profiles: Iterable[MarketProfile]) -> None:
         self._profiles = tuple(profiles)
         self._by_code: dict[str, MarketProfile] = {}
-        self._market_by_exchange: dict[str, Market] = {}
         self._market_by_index: dict[str, Market] = {}
 
         for profile in self._profiles:
@@ -45,11 +44,6 @@ class MarketRegistry:
             if code in self._by_code:
                 raise ValueError(f"Duplicate market profile: {code}")
             self._by_code[code] = profile
-            for exchange in profile.exchanges:
-                normalized_exchange = exchange.upper()
-                if normalized_exchange in self._market_by_exchange:
-                    raise ValueError(f"Duplicate exchange alias: {normalized_exchange}")
-                self._market_by_exchange[normalized_exchange] = profile.market
             for index in profile.indexes:
                 normalized_index = index.upper()
                 if normalized_index in self._market_by_index:

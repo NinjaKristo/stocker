@@ -13,6 +13,7 @@ from ..domain.markets import (
     UnsupportedMarketError,
     get_market_catalog,
     market_registry,
+    market_symbol_suffix_registry,
     mic_alias_registry,
 )
 
@@ -23,76 +24,6 @@ _MARKET_DEFAULTS: dict[str, tuple[str, str]] = {
     profile.market.code: (profile.currency, profile.timezone_name)
     for profile in market_registry.profiles()
 }
-
-_MARKET_BY_SUFFIX: tuple[tuple[str, str], ...] = (
-    (".HK", "HK"),
-    (".NS", "IN"),
-    (".BO", "IN"),
-    (".KS", "KR"),
-    (".KQ", "KR"),
-    (".TWO", "TW"),
-    (".TW", "TW"),
-    (".SS", "CN"),
-    (".SZ", "CN"),
-    (".BJ", "CN"),
-    (".SI", "SG"),
-    (".TO", "CA"),
-    (".V", "CA"),
-    (".T", "JP"),
-    (".DE", "DE"),
-    (".F", "DE"),
-)
-
-_SUFFIX_BY_MARKET: dict[str, str] = {
-    "HK": ".HK",
-    "IN": ".NS",
-    "JP": ".T",
-    "KR": ".KS",
-    "TW": ".TW",
-    "CN": ".SS",
-    "SG": ".SI",
-    "CA": ".TO",
-    "DE": ".DE",
-}
-
-_SUFFIX_BY_EXCHANGE: dict[str, str] = {
-    "TSX": ".TO",
-    "XTSE": ".TO",
-    "TSXV": ".V",
-    "XTNX": ".V",
-    "XETR": ".DE",
-    "XETRA": ".DE",
-    "XFRA": ".F",
-    "FRA": ".F",
-    "FWB": ".F",
-    "NSE": ".NS",
-    "XNSE": ".NS",
-    "XBOM": ".BO",
-    "KOSPI": ".KS",
-    "KOSDAQ": ".KQ",
-    "KRX": ".KS",
-    "XKRX": ".KS",
-    "TWSE": ".TW",
-    "XTAI": ".TW",
-    "TPEX": ".TWO",
-    "SSE": ".SS",
-    "SHSE": ".SS",
-    "XSHG": ".SS",
-    "SZSE": ".SZ",
-    "XSHE": ".SZ",
-    "BJSE": ".BJ",
-    "XBSE": ".BJ",
-    "XBEI": ".BJ",
-    "SGX": ".SI",
-    "SES": ".SI",
-    "XSES": ".SI",
-}
-
-_SUFFIX_BY_MARKET_EXCHANGE: dict[tuple[str, str], str] = {
-    ("IN", "BSE"): ".BO",
-    ("CN", "BSE"): ".BJ",
-}
-
 
 @dataclass(frozen=True)
 class SecurityIdentity:
@@ -141,39 +72,21 @@ class SecurityMasterResolver:
 
     def infer_market(self, symbol: str, exchange: str | None = None) -> str:
         normalized_exchange = self.normalize_exchange(exchange)
+        if normalized_exchange and mic_alias_registry.is_ambiguous(normalized_exchange):
+            market_from_symbol = market_symbol_suffix_registry.market_for_symbol(symbol)
+            if market_from_symbol is not None:
+                return market_from_symbol
+            raise ValueError(
+                f"Ambiguous exchange alias {normalized_exchange!r} requires market context"
+            )
         exchange_resolution = mic_alias_registry.resolve_global(normalized_exchange)
         if exchange_resolution is not None:
             return exchange_resolution.market
 
-        normalized_symbol = self.normalize_symbol(symbol)
-        for suffix, market in _MARKET_BY_SUFFIX:
-            if normalized_symbol.endswith(suffix):
-                return market
+        market_from_symbol = market_symbol_suffix_registry.market_for_symbol(symbol)
+        if market_from_symbol is not None:
+            return market_from_symbol
         return "US"
-
-    def _resolve_suffix(self, market: str, exchange: str | None) -> str | None:
-        normalized_exchange = self.normalize_exchange(exchange)
-        if normalized_exchange:
-            scoped_suffix = _SUFFIX_BY_MARKET_EXCHANGE.get(
-                (market, normalized_exchange)
-            )
-            if scoped_suffix:
-                return scoped_suffix
-            if normalized_exchange in _SUFFIX_BY_EXCHANGE:
-                return _SUFFIX_BY_EXCHANGE[normalized_exchange]
-            alias_resolution = mic_alias_registry.resolve(market, normalized_exchange)
-            if alias_resolution is not None:
-                mic_suffix = _SUFFIX_BY_EXCHANGE.get(alias_resolution.mic)
-                if mic_suffix:
-                    return mic_suffix
-        return _SUFFIX_BY_MARKET.get(market)
-
-    def _recognized_symbol_suffix(self, symbol: str) -> str | None:
-        normalized_symbol = self.normalize_symbol(symbol)
-        for suffix, _ in _MARKET_BY_SUFFIX:
-            if normalized_symbol.endswith(suffix):
-                return suffix
-        return None
 
     def resolve_identity(
         self,
@@ -216,10 +129,17 @@ class SecurityMasterResolver:
         canonical_symbol = normalized_symbol
         if normalized_market != "US" and resolved_local_code:
             # Preserve explicit non-US suffix when no exchange override is provided.
-            if normalized_exchange is None and self._recognized_symbol_suffix(normalized_symbol):
+            if (
+                normalized_exchange is None
+                and market_symbol_suffix_registry.market_for_symbol(normalized_symbol)
+                is not None
+            ):
                 canonical_symbol = normalized_symbol
             else:
-                suffix = self._resolve_suffix(normalized_market, normalized_exchange)
+                suffix = market_symbol_suffix_registry.suffix_for(
+                    normalized_market,
+                    normalized_exchange,
+                )
                 if suffix:
                     expected_canonical = f"{resolved_local_code}{suffix}"
                     if canonical_symbol != expected_canonical:

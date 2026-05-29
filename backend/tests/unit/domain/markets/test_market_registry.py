@@ -66,7 +66,7 @@ def test_custom_registry_rejects_duplicate_market_profiles() -> None:
         raise AssertionError("Expected duplicate profile rejection")
 
 
-def test_custom_registry_rejects_duplicate_exchange_and_index_aliases() -> None:
+def test_custom_registry_does_not_own_exchange_alias_uniqueness() -> None:
     us = market_registry.profile("US")
     hk = market_registry.profile("HK")
 
@@ -84,8 +84,14 @@ def test_custom_registry_rejects_duplicate_exchange_and_index_aliases() -> None:
         benchmark_primary_kind=hk.benchmark_primary_kind,
         benchmark_fallback_kind=hk.benchmark_fallback_kind,
     )
-    with pytest.raises(ValueError, match="Duplicate exchange alias"):
-        MarketRegistry((us, duplicate_exchange))
+    registry = MarketRegistry((us, duplicate_exchange))
+
+    assert registry.profile("HK").exchanges == ("NYSE",)
+
+
+def test_custom_registry_rejects_duplicate_index_aliases() -> None:
+    us = market_registry.profile("US")
+    hk = market_registry.profile("HK")
 
     duplicate_index = MarketProfile(
         market=hk.market,

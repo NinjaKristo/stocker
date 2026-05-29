@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.security_master_service import SecurityMasterResolver
 from app.domain.markets.registry import market_registry
 
@@ -165,12 +167,19 @@ def test_resolve_identity_uses_china_suffixes_by_exchange():
 def test_resolve_identity_does_not_infer_market_from_ambiguous_bse_alias() -> None:
     resolver = SecurityMasterResolver()
 
-    identity = resolver.resolve_identity(symbol="500325", exchange="bse")
+    with pytest.raises(ValueError, match="Ambiguous exchange alias 'BSE'"):
+        resolver.resolve_identity(symbol="500325", exchange="bse")
 
-    assert identity.market == "US"
+
+def test_resolve_identity_can_disambiguate_bse_alias_from_symbol_suffix() -> None:
+    resolver = SecurityMasterResolver()
+
+    identity = resolver.resolve_identity(symbol="500325.BO", exchange="bse")
+
+    assert identity.market == "IN"
     assert identity.exchange == "BSE"
-    assert identity.mic is None
-    assert identity.canonical_symbol == "500325"
+    assert identity.mic == "XBOM"
+    assert identity.canonical_symbol == "500325.BO"
 
 
 def test_resolve_identity_uses_singapore_suffix_by_exchange_and_market():
