@@ -13,6 +13,11 @@ from app.domain.providers.data_plan import (
 )
 from app.services.provider_adapters.fundamentals_plan_executor import (
     FundamentalsProviderPlanExecutor,
+    fundamentals_plan_requires_single_symbol_route,
+)
+from app.services.provider_adapters.fundamentals_provider_adapters import (
+    FundamentalsExecutionContext,
+    ProviderExecutionResult,
 )
 
 
@@ -50,7 +55,7 @@ class _FakeHost:
         self.opendart_fundamentals_service = _FakeOpenDart()
         self.eps_rating_calls = []
 
-    def _get_eps_rating_data(self, symbol: str):
+    def get_eps_rating_data(self, symbol: str):
         self.eps_rating_calls.append(symbol)
         return {"eps_raw_score": 87}
 
@@ -157,3 +162,71 @@ def test_executor_fails_closed_when_plan_has_no_executable_provider() -> None:
     host.finviz_service.get_fundamentals.assert_not_called()
     host.yfinance_service.get_fundamentals.assert_not_called()
     assert result is None
+
+
+class _StaticAdapter:
+    def __init__(
+        self,
+        provider: str,
+        payload: dict,
+        *,
+        requires_single_symbol_route: bool = False,
+        merge_missing_only: bool = False,
+    ) -> None:
+        self.provider = provider
+        self.payload = payload
+        self.requires_single_symbol_route = requires_single_symbol_route
+        self.merge_missing_only = merge_missing_only
+        self.calls: list[FundamentalsExecutionContext] = []
+
+    def fetch(self, context: FundamentalsExecutionContext) -> ProviderExecutionResult:
+        self.calls.append(context)
+        return ProviderExecutionResult(
+            provider=self.provider,
+            payload=dict(self.payload),
+            source_label=self.provider,
+            merge_missing_only=self.merge_missing_only,
+        )
+
+
+def test_executor_dispatches_native_steps_through_registered_adapters() -> None:
+    host = _FakeHost()
+    first = _StaticAdapter(
+        "native-core",
+        {"market_cap": 1_000, "pe_ratio": 10.0},
+        requires_single_symbol_route=True,
+    )
+    second = _StaticAdapter(
+        "native-supplement",
+        {"market_cap": 2_000, "revenue_current": 50_000},
+        requires_single_symbol_route=True,
+        merge_missing_only=True,
+    )
+    plan = ProviderDataPlan(
+        market="US",
+        dataset=DATASET_FUNDAMENTALS,
+        steps=(
+            ProviderPlanStep("native-core", batch_size=1, fallback=False),
+            ProviderPlanStep("native-supplement", batch_size=1),
+        ),
+        version="test-plan",
+    )
+    adapters = {
+        "native-core": first,
+        "native-supplement": second,
+    }
+    executor = FundamentalsProviderPlanExecutor(
+        host,
+        plan_resolver=lambda market, mic=None: plan,
+        provider_adapters=adapters,
+    )
+
+    assert fundamentals_plan_requires_single_symbol_route(plan, provider_adapters=adapters)
+    result = executor.fetch_fundamentals("AAPL", market="US")
+
+    assert [call.symbol for call in first.calls] == ["AAPL"]
+    assert [call.symbol for call in second.calls] == ["AAPL"]
+    assert result["market_cap"] == 1_000
+    assert result["revenue_current"] == 50_000
+    assert result["data_source"] == "native-core+native-supplement"
+    assert result["provider_data_plan"] == plan.provenance_metadata()

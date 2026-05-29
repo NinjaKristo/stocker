@@ -3,50 +3,31 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import replace
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any
 
 from app.domain.providers.data_plan import (
     DATASET_FUNDAMENTALS,
-    PROVIDER_AKSHARE,
-    PROVIDER_BAOSTOCK,
     PROVIDER_FINVIZ,
-    PROVIDER_KRX,
-    PROVIDER_OPENDART,
     PROVIDER_YFINANCE,
     ProviderDataPlan,
     provider_data_plan_registry,
 )
 from app.services.security_master_service import SecurityIdentity, security_master_resolver
 
+from .fundamentals_provider_adapters import (
+    DEFAULT_FUNDAMENTALS_ADAPTER_CAPABILITIES,
+    FundamentalsExecutionContext,
+    FundamentalsProviderAdapter,
+    FundamentalsProviderHost,
+    default_fundamentals_provider_adapters,
+)
+
 logger = logging.getLogger(__name__)
 
 FundamentalsPlanResolver = Callable[[str | None, str | None], ProviderDataPlan]
-SINGLE_SYMBOL_FUNDAMENTALS_PROVIDERS = frozenset({PROVIDER_AKSHARE, PROVIDER_KRX})
-
-
-class FundamentalsProviderHost(Protocol):
-    prefer_finviz: bool
-    enable_fallback: bool
-    strict_validation: bool
-    metrics: dict[str, int]
-    validator: Any
-    finviz_service: Any
-    yfinance_service: Any
-    cn_market_data_service: Any
-    krx_fundamentals_service: Any
-    opendart_fundamentals_service: Any
-
-    def _get_eps_rating_data(self, symbol: str) -> dict[str, Any] | None:
-        ...
-
-
-@dataclass(frozen=True, slots=True)
-class _FundamentalsExecutionContext:
-    plan: ProviderDataPlan
-    identity: SecurityIdentity | None = None
 
 
 def _default_plan_resolver(
@@ -67,22 +48,27 @@ def resolve_fundamentals_plan_for_symbol(
     base_plan = resolver(market, None)
     if not base_plan.providers:
         return base_plan
-    try:
-        identity = security_master_resolver.resolve_identity(
-            symbol=symbol,
-            market=base_plan.market,
-        )
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.debug("Could not resolve fundamentals plan identity for %s: %s", symbol, exc)
-        return base_plan
-    if identity.mic:
+    identity = _resolve_identity(symbol, base_plan.market)
+    if identity and identity.mic:
         return resolver(identity.market, identity.mic)
     return base_plan
 
 
-def fundamentals_plan_uses_single_symbol_route(plan: ProviderDataPlan) -> bool:
-    """Return whether a plan starts with a native single-symbol provider."""
-    return bool(plan.providers and plan.providers[0] in SINGLE_SYMBOL_FUNDAMENTALS_PROVIDERS)
+def fundamentals_plan_requires_single_symbol_route(
+    plan: ProviderDataPlan,
+    *,
+    provider_adapters: Mapping[str, FundamentalsProviderAdapter] | None = None,
+) -> bool:
+    """Return whether a plan contains providers that cannot use batch yfinance routing."""
+    for step in plan.steps:
+        if provider_adapters is not None:
+            adapter = provider_adapters.get(step.provider)
+            if adapter is not None and adapter.requires_single_symbol_route:
+                return True
+            continue
+        if DEFAULT_FUNDAMENTALS_ADAPTER_CAPABILITIES.get(step.provider, False):
+            return True
+    return False
 
 
 class FundamentalsProviderPlanExecutor:
@@ -93,9 +79,15 @@ class FundamentalsProviderPlanExecutor:
         host: FundamentalsProviderHost,
         *,
         plan_resolver: FundamentalsPlanResolver | None = None,
+        provider_adapters: Mapping[str, FundamentalsProviderAdapter] | None = None,
     ) -> None:
         self._host = host
         self._plan_resolver = plan_resolver or _default_plan_resolver
+        self._provider_adapters = (
+            dict(provider_adapters)
+            if provider_adapters is not None
+            else default_fundamentals_provider_adapters(host)
+        )
 
     def fetch_fundamentals(
         self,
@@ -104,24 +96,15 @@ class FundamentalsProviderPlanExecutor:
         market: str | None = None,
     ) -> dict[str, Any] | None:
         context = self._resolve_context(symbol, market)
-        plan = context.plan
-        if not plan.providers:
-            logger.error(
-                "No fundamentals provider plan for %s market=%r dataset=%s",
-                symbol,
-                market,
-                DATASET_FUNDAMENTALS,
-            )
+        if not context.plan.providers:
+            self._log_empty_plan(symbol, market)
             return None
 
-        self._record_finviz_policy_exclusion(plan, market)
-        if fundamentals_plan_uses_single_symbol_route(plan):
-            if plan.providers[0] in {PROVIDER_AKSHARE, PROVIDER_BAOSTOCK}:
-                return self._fetch_cn_fundamentals(symbol, context=context)
-            if plan.providers[0] == PROVIDER_KRX:
-                return self._fetch_kr_fundamentals(symbol, context=context)
-
-        return self._fetch_generic_fundamentals(symbol, market=market, plan=plan)
+        self._record_finviz_policy_exclusion(context.plan, market)
+        return self._execute_fundamentals_plan(
+            context,
+            merge_all_steps=self._requires_single_symbol_route(context.plan),
+        )
 
     def fetch_combined_data(
         self,
@@ -130,370 +113,247 @@ class FundamentalsProviderPlanExecutor:
         market: str | None = None,
     ) -> dict[str, Any] | None:
         context = self._resolve_context(symbol, market)
-        plan = context.plan
-        if not plan.providers:
-            logger.error(
-                "No fundamentals provider plan for %s market=%r dataset=%s",
-                symbol,
-                market,
-                DATASET_FUNDAMENTALS,
-            )
+        if not context.plan.providers:
+            self._log_empty_plan(symbol, market)
             return None
 
-        if fundamentals_plan_uses_single_symbol_route(plan):
-            if plan.providers[0] in {PROVIDER_AKSHARE, PROVIDER_BAOSTOCK}:
-                return self._fetch_cn_combined(symbol, context=context)
-            if plan.providers[0] == PROVIDER_KRX:
-                return self._fetch_kr_combined(symbol, context=context)
+        if self._requires_single_symbol_route(context.plan):
+            fundamentals = self._execute_fundamentals_plan(context, merge_all_steps=True)
+            return self._combined_from_fundamentals(context, fundamentals)
 
-        return self._fetch_generic_combined(symbol, market=market, plan=plan)
+        return self._fetch_generic_combined(context)
 
     def _resolve_context(
         self,
         symbol: str,
         market: str | None,
-    ) -> _FundamentalsExecutionContext:
+    ) -> FundamentalsExecutionContext:
         base_plan = self._resolve_plan(market)
         if not base_plan.providers:
-            return _FundamentalsExecutionContext(plan=base_plan)
-        identity = self._resolve_identity(symbol, base_plan.market)
-        if identity and identity.mic:
-            return _FundamentalsExecutionContext(
-                plan=self._resolve_plan(identity.market, identity.mic),
-                identity=identity,
+            return FundamentalsExecutionContext(
+                symbol=symbol,
+                requested_market=market,
+                plan=base_plan,
             )
-        return _FundamentalsExecutionContext(plan=base_plan, identity=identity)
+        identity = _resolve_identity(symbol, base_plan.market)
+        plan = (
+            self._resolve_plan(identity.market, identity.mic)
+            if identity and identity.mic
+            else base_plan
+        )
+        return FundamentalsExecutionContext(
+            symbol=symbol,
+            requested_market=market,
+            plan=plan,
+            identity=identity,
+        )
 
     def _resolve_plan(self, market: str | None, mic: str | None = None) -> ProviderDataPlan:
         return self._plan_resolver(market, mic)
 
-    @staticmethod
-    def _resolve_identity(symbol: str, market: str) -> SecurityIdentity | None:
-        try:
-            return security_master_resolver.resolve_identity(symbol=symbol, market=market)
-        except Exception as exc:  # pragma: no cover - defensive fallback
-            logger.debug("Could not resolve fundamentals identity for %s: %s", symbol, exc)
-            return None
+    def _requires_single_symbol_route(self, plan: ProviderDataPlan) -> bool:
+        return fundamentals_plan_requires_single_symbol_route(
+            plan,
+            provider_adapters=self._provider_adapters,
+        )
 
-    def _fetch_generic_fundamentals(
+    def _execute_fundamentals_plan(
         self,
-        symbol: str,
+        context: FundamentalsExecutionContext,
         *,
-        market: str | None,
-        plan: ProviderDataPlan,
+        merge_all_steps: bool,
     ) -> dict[str, Any] | None:
-        finviz_failed = False
-        for step in plan.steps:
-            provider = step.provider
-            if provider == PROVIDER_FINVIZ:
-                if not self._finviz_allowed(plan):
-                    continue
-                logger.debug("Attempting to fetch %s fundamentals from finvizfinance", symbol)
-                finviz_data = self._host.finviz_service.get_fundamentals(symbol)
-                if finviz_data:
-                    is_valid, errors = self._host.validator.validate_fundamentals(finviz_data)
-                    if not is_valid:
-                        logger.warning(
-                            "Range validation warnings for %s fundamentals: %s",
-                            symbol,
-                            errors,
-                        )
-
-                    self._metric_inc("finviz_success")
-                    logger.info("Using finvizfinance data for %s fundamentals", symbol)
-                    finviz_data["data_source"] = PROVIDER_FINVIZ
-                    finviz_data["data_source_timestamp"] = datetime.utcnow()
-                    self._attach_provider_plan(finviz_data, plan)
-
-                    eps_data = self._host._get_eps_rating_data(symbol)
-                    if eps_data:
-                        finviz_data.update(eps_data)
-                        logger.debug(
-                            "Supplemented finviz data with EPS rating data for %s",
-                            symbol,
-                        )
-                    return finviz_data
-
-                self._metric_inc("finviz_failed")
-                logger.warning("finvizfinance failed to fetch %s", symbol)
-                if not self._host.enable_fallback:
-                    return None
-                finviz_failed = True
-                continue
-
-            if provider == PROVIDER_YFINANCE:
-                if finviz_failed:
-                    logger.info("Falling back to yfinance for %s fundamentals", symbol)
-                    self._metric_inc("yfinance_fallback")
-                else:
-                    logger.debug("Using yfinance as primary source for %s", symbol)
-                    self._metric_inc("yfinance_primary")
-                yf_data = self._host.yfinance_service.get_fundamentals(symbol)
-                if yf_data:
-                    yf_data["data_source"] = PROVIDER_YFINANCE
-                    yf_data["data_source_timestamp"] = datetime.utcnow()
-                    self._attach_provider_plan(yf_data, plan)
-                    logger.info("Using yfinance data for %s fundamentals", symbol)
-                    return yf_data
-                continue
-
-            self._log_unsupported_provider(provider, plan)
-
-        logger.error("All data sources failed for %s fundamentals", symbol)
-        return None
-
-    def _fetch_cn_fundamentals(
-        self,
-        symbol: str,
-        *,
-        context: _FundamentalsExecutionContext,
-    ) -> dict[str, Any] | None:
-        plan = context.plan
-        identity = context.identity or self._resolve_identity(symbol, plan.market)
-        local_code = str(getattr(identity, "local_code", None) or symbol).split(".", 1)[0]
-        canonical_symbol = getattr(identity, "canonical_symbol", symbol)
         merged: dict[str, Any] = {}
         sources: list[str] = []
+        metadata: dict[str, Any] = {}
+        fallback_active = False
 
-        for step in plan.steps:
-            provider = step.provider
-            if provider == PROVIDER_AKSHARE:
-                try:
-                    core_data = self._host.cn_market_data_service.core_fundamentals(local_code)
-                except Exception as exc:  # pragma: no cover - provider/network variability
-                    logger.warning("AKShare CN core fundamentals failed for %s: %s", symbol, exc)
-                    core_data = {}
-                if core_data:
-                    merged.update(core_data)
-                    sources.append(PROVIDER_AKSHARE)
+        for step in context.plan.steps:
+            adapter = self._provider_adapters.get(step.provider)
+            if adapter is None:
+                self._log_unsupported_provider(step.provider, context.plan)
                 continue
 
-            if provider == PROVIDER_BAOSTOCK:
-                try:
-                    statement_data = self._host.cn_market_data_service.statement_fundamentals(
-                        local_code
+            step_context = replace(
+                context,
+                fallback_active=fallback_active,
+                allow_fallback_provider=self._host.enable_fallback or not merge_all_steps,
+                record_yfinance_metrics=not merge_all_steps,
+                use_canonical_provider_symbol=merge_all_steps,
+            )
+            result = adapter.fetch(step_context)
+            metadata.update(result.metadata)
+
+            if result.payload:
+                if not merge_all_steps:
+                    payload = dict(result.payload)
+                    self._finalize_payload(
+                        payload,
+                        plan=context.plan,
+                        source_label=result.source_label or result.provider,
                     )
-                except Exception as exc:  # pragma: no cover - provider/network variability
-                    logger.warning("CN statement fundamentals failed for %s: %s", symbol, exc)
-                    statement_data = {}
-                if statement_data:
-                    merged.update(
-                        {key: value for key, value in statement_data.items() if value is not None}
-                    )
-                    sources.append("cn_statement")
-                continue
+                    return payload
 
-            if provider == PROVIDER_YFINANCE:
-                if not self._host.enable_fallback:
-                    continue
-                yf_data = self._host.yfinance_service.get_fundamentals(canonical_symbol)
-                if yf_data:
-                    for key, value in yf_data.items():
-                        if value is not None and key not in merged:
-                            merged[key] = value
-                    sources.append(PROVIDER_YFINANCE)
-                continue
+                self._merge_payload(
+                    merged,
+                    result.payload,
+                    missing_only=result.merge_missing_only,
+                )
+                if result.source_label:
+                    sources.append(result.source_label)
 
-            self._log_unsupported_provider(provider, plan)
+            if result.activate_fallback:
+                fallback_active = True
+            if result.stop_plan:
+                return None
 
         if not merged:
-            logger.error("All CN data sources failed for %s fundamentals", symbol)
+            logger.error("All data sources failed for %s fundamentals", context.symbol)
             return None
 
-        merged["symbol"] = canonical_symbol
-        merged["market"] = "CN"
-        merged["currency"] = getattr(identity, "currency", "CNY")
-        merged["data_source"] = "+".join(dict.fromkeys(sources)) or "cn"
-        merged["data_source_timestamp"] = datetime.utcnow()
-        if getattr(identity, "mic", None) == "XBSE":
-            merged["yfinance_status"] = "disabled_for_beijing"
-        self._attach_provider_plan(merged, plan)
-        return merged
-
-    def _fetch_kr_fundamentals(
-        self,
-        symbol: str,
-        *,
-        context: _FundamentalsExecutionContext,
-    ) -> dict[str, Any] | None:
-        plan = context.plan
-        identity = context.identity or self._resolve_identity(symbol, plan.market)
-        local_code = str(getattr(identity, "local_code", None) or symbol).split(".", 1)[0]
-        canonical_symbol = getattr(identity, "canonical_symbol", symbol)
-        merged: dict[str, Any] = {}
-        sources: list[str] = []
-
-        for step in plan.steps:
-            provider = step.provider
-            if provider == PROVIDER_KRX:
-                try:
-                    krx_data = self._host.krx_fundamentals_service.core_fundamentals(local_code)
-                except Exception as exc:  # pragma: no cover - provider/network variability
-                    logger.warning("KRX fundamentals failed for %s: %s", symbol, exc)
-                    krx_data = {}
-                if krx_data:
-                    merged.update(krx_data)
-                    sources.append(PROVIDER_KRX)
-                continue
-
-            if provider == PROVIDER_OPENDART:
-                try:
-                    dart_data = (
-                        self._host.opendart_fundamentals_service.get_statement_fundamentals(
-                            local_code
-                        )
-                    )
-                except Exception as exc:  # pragma: no cover - provider/network variability
-                    logger.warning("OpenDART fundamentals failed for %s: %s", symbol, exc)
-                    dart_data = {}
-                if dart_data:
-                    merged.update(
-                        {key: value for key, value in dart_data.items() if value is not None}
-                    )
-                    sources.append(PROVIDER_OPENDART)
-                continue
-
-            if provider == PROVIDER_YFINANCE:
-                if not self._host.enable_fallback:
-                    continue
-                yf_data = self._host.yfinance_service.get_fundamentals(canonical_symbol)
-                if yf_data:
-                    for key, value in yf_data.items():
-                        if value is not None and key not in merged:
-                            merged[key] = value
-                    sources.append(PROVIDER_YFINANCE)
-                continue
-
-            self._log_unsupported_provider(provider, plan)
-
-        if not merged:
-            logger.error("All KR data sources failed for %s fundamentals", symbol)
-            return None
-
-        merged["symbol"] = canonical_symbol
-        merged["market"] = "KR"
-        merged["currency"] = getattr(identity, "currency", "KRW")
-        merged["data_source"] = "+".join(dict.fromkeys(sources)) or "kr"
-        merged["data_source_timestamp"] = datetime.utcnow()
-        if (
-            plan.allows(PROVIDER_OPENDART)
-            and not self._host.opendart_fundamentals_service.is_configured
-        ):
-            merged["opendart_status"] = "missing_api_key"
-        self._attach_provider_plan(merged, plan)
+        self._finalize_merged_payload(
+            merged,
+            context=context,
+            sources=sources,
+            metadata=metadata,
+        )
         return merged
 
     def _fetch_generic_combined(
         self,
-        symbol: str,
-        *,
-        market: str | None,
-        plan: ProviderDataPlan,
+        context: FundamentalsExecutionContext,
     ) -> dict[str, Any] | None:
-        self._record_finviz_policy_exclusion(plan, market)
+        plan = context.plan
+        self._record_finviz_policy_exclusion(plan, context.requested_market)
         if self._finviz_allowed(plan):
-            logger.debug("Attempting to fetch %s combined data from finvizfinance", symbol)
+            logger.debug(
+                "Attempting to fetch %s combined data from finvizfinance",
+                context.symbol,
+            )
             combined_data = self._host.finviz_service.get_combined_data(
-                symbol,
+                context.symbol,
                 validate=self._host.strict_validation,
             )
             if combined_data:
                 self._metric_inc("finviz_success")
-                logger.info("Using finvizfinance for %s combined data", symbol)
+                logger.info("Using finvizfinance for %s combined data", context.symbol)
                 timestamp = datetime.utcnow()
-                combined_data["fundamentals"]["data_source"] = PROVIDER_FINVIZ
-                combined_data["fundamentals"]["data_source_timestamp"] = timestamp
-                self._attach_provider_plan(combined_data["fundamentals"], plan)
+                fundamentals = combined_data["fundamentals"]
+                fundamentals["data_source"] = PROVIDER_FINVIZ
+                fundamentals["data_source_timestamp"] = timestamp
+                fundamentals["provider_data_plan"] = plan.provenance_metadata()
                 combined_data["growth"]["data_source"] = PROVIDER_FINVIZ
                 combined_data["growth"]["data_source_timestamp"] = timestamp
                 return combined_data
 
             self._metric_inc("finviz_failed")
-            logger.warning("finvizfinance failed for %s combined data", symbol)
+            logger.warning("finvizfinance failed for %s combined data", context.symbol)
             if not self._host.enable_fallback:
                 return None
-            logger.info("Falling back to yfinance for %s combined data", symbol)
+            logger.info("Falling back to yfinance for %s combined data", context.symbol)
             self._metric_inc("yfinance_fallback")
         else:
-            logger.debug("Using yfinance as primary source for %s", symbol)
+            logger.debug("Using yfinance as primary source for %s", context.symbol)
             self._metric_inc("yfinance_primary")
 
         if not plan.allows(PROVIDER_YFINANCE):
-            logger.error("No yfinance fallback in provider plan for %s combined data", symbol)
+            logger.error("No yfinance fallback in provider plan for %s combined data", context.symbol)
             return None
 
-        fundamentals = self._host.yfinance_service.get_fundamentals(symbol)
-        growth = self._host.yfinance_service.get_quarterly_growth(symbol, market=market)
+        fundamentals = self._host.yfinance_service.get_fundamentals(context.symbol)
+        growth = self._host.yfinance_service.get_quarterly_growth(
+            context.symbol,
+            market=context.requested_market,
+        )
         if fundamentals and growth:
             timestamp = datetime.utcnow()
             fundamentals["data_source"] = PROVIDER_YFINANCE
             fundamentals["data_source_timestamp"] = timestamp
-            self._attach_provider_plan(fundamentals, plan)
+            fundamentals["provider_data_plan"] = plan.provenance_metadata()
             growth["data_source"] = PROVIDER_YFINANCE
             growth["data_source_timestamp"] = timestamp
-            logger.info("Using yfinance for %s combined data", symbol)
+            logger.info("Using yfinance for %s combined data", context.symbol)
             return {
                 "fundamentals": fundamentals,
                 "growth": growth,
                 "data_source": PROVIDER_YFINANCE,
             }
 
-        logger.error("All data sources failed for %s combined data", symbol)
+        logger.error("All data sources failed for %s combined data", context.symbol)
         return None
 
-    def _fetch_cn_combined(
+    def _combined_from_fundamentals(
         self,
-        symbol: str,
-        *,
-        context: _FundamentalsExecutionContext,
+        context: FundamentalsExecutionContext,
+        fundamentals: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        fundamentals = self._fetch_cn_fundamentals(symbol, context=context)
-        identity = context.identity or self._resolve_identity(symbol, context.plan.market)
+        if not fundamentals:
+            logger.error(
+                "All %s data sources failed for %s combined data",
+                context.plan.market,
+                context.symbol,
+            )
+            return None
+
         growth: dict[str, Any] = {}
         if context.plan.allows(PROVIDER_YFINANCE):
             growth = self._host.yfinance_service.get_quarterly_growth(
-                getattr(identity, "canonical_symbol", symbol),
-                market="CN",
+                context.canonical_symbol,
+                market=context.plan.market,
             ) or {}
-        if fundamentals:
-            timestamp = datetime.utcnow()
-            if growth:
-                growth["data_source"] = PROVIDER_YFINANCE
-                growth["data_source_timestamp"] = timestamp
-            return {
-                "fundamentals": fundamentals,
-                "growth": growth,
-                "data_source": fundamentals.get("data_source", "cn"),
-            }
-        logger.error("All CN data sources failed for %s combined data", symbol)
-        return None
+        if growth:
+            growth["data_source"] = PROVIDER_YFINANCE
+            growth["data_source_timestamp"] = datetime.utcnow()
+        return {
+            "fundamentals": fundamentals,
+            "growth": growth,
+            "data_source": fundamentals.get("data_source", context.plan.market.lower()),
+        }
 
-    def _fetch_kr_combined(
-        self,
-        symbol: str,
+    @staticmethod
+    def _merge_payload(
+        target: dict[str, Any],
+        payload: dict[str, Any],
         *,
-        context: _FundamentalsExecutionContext,
-    ) -> dict[str, Any] | None:
-        fundamentals = self._fetch_kr_fundamentals(symbol, context=context)
-        identity = context.identity or self._resolve_identity(symbol, context.plan.market)
-        growth = None
-        if context.plan.allows(PROVIDER_YFINANCE):
-            growth = self._host.yfinance_service.get_quarterly_growth(
-                getattr(identity, "canonical_symbol", symbol),
-                market="KR",
-            )
-        if fundamentals:
-            timestamp = datetime.utcnow()
-            if growth:
-                growth["data_source"] = PROVIDER_YFINANCE
-                growth["data_source_timestamp"] = timestamp
-            return {
-                "fundamentals": fundamentals,
-                "growth": growth or {},
-                "data_source": fundamentals.get("data_source", "krx"),
-            }
-        logger.error("All KR data sources failed for %s combined data", symbol)
-        return None
+        missing_only: bool,
+    ) -> None:
+        for key, value in payload.items():
+            if value is None:
+                continue
+            if missing_only and key in target:
+                continue
+            target[key] = value
+
+    @staticmethod
+    def _finalize_payload(
+        payload: dict[str, Any],
+        *,
+        plan: ProviderDataPlan,
+        source_label: str,
+    ) -> None:
+        payload["data_source"] = source_label
+        payload["data_source_timestamp"] = datetime.utcnow()
+        payload["provider_data_plan"] = plan.provenance_metadata()
+
+    def _finalize_merged_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        context: FundamentalsExecutionContext,
+        sources: list[str],
+        metadata: dict[str, Any],
+    ) -> None:
+        payload.update(metadata)
+        payload["symbol"] = context.canonical_symbol
+        payload["market"] = context.plan.market
+        payload["currency"] = context.currency
+        payload["data_source"] = (
+            "+".join(dict.fromkeys(sources)) or context.plan.market.lower()
+        )
+        payload["data_source_timestamp"] = datetime.utcnow()
+        if getattr(context.identity, "mic", None) == "XBSE":
+            payload["yfinance_status"] = "disabled_for_beijing"
+        payload["provider_data_plan"] = context.plan.provenance_metadata()
 
     def _finviz_allowed(self, plan: ProviderDataPlan) -> bool:
         return bool(self._host.prefer_finviz and plan.allows(PROVIDER_FINVIZ))
@@ -517,9 +377,13 @@ class FundamentalsProviderPlanExecutor:
         self._host.metrics[key] = self._host.metrics.get(key, 0) + 1
 
     @staticmethod
-    def _attach_provider_plan(payload: dict[str, Any] | None, plan: ProviderDataPlan) -> None:
-        if payload is not None:
-            payload["provider_data_plan"] = plan.provenance_metadata()
+    def _log_empty_plan(symbol: str, market: str | None) -> None:
+        logger.error(
+            "No fundamentals provider plan for %s market=%r dataset=%s",
+            symbol,
+            market,
+            DATASET_FUNDAMENTALS,
+        )
 
     @staticmethod
     def _log_unsupported_provider(provider: str, plan: ProviderDataPlan) -> None:
@@ -530,3 +394,11 @@ class FundamentalsProviderPlanExecutor:
             plan.dataset,
             plan.version,
         )
+
+
+def _resolve_identity(symbol: str, market: str) -> SecurityIdentity | None:
+    try:
+        return security_master_resolver.resolve_identity(symbol=symbol, market=market)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.debug("Could not resolve fundamentals identity for %s: %s", symbol, exc)
+        return None

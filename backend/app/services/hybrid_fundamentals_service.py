@@ -30,7 +30,7 @@ from app.domain.providers.data_plan import (
     provider_data_plan_registry,
 )
 from .provider_adapters.fundamentals_plan_executor import (
-    fundamentals_plan_uses_single_symbol_route,
+    fundamentals_plan_requires_single_symbol_route,
     resolve_fundamentals_plan_for_symbol,
 )
 
@@ -159,7 +159,7 @@ class HybridFundamentalsService:
         market_by_symbol: Optional[Dict[str, str]] = None,
     ) -> bool:
         plan = self._fundamentals_plan_for_symbol(symbol, market_by_symbol)
-        return fundamentals_plan_uses_single_symbol_route(plan)
+        return fundamentals_plan_requires_single_symbol_route(plan)
 
     def _get_data_source_service(self):
         if self._data_source_service is None:

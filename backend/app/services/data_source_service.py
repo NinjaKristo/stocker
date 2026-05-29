@@ -176,7 +176,7 @@ class DataSourceService:
             market=market,
         )
 
-    def _get_eps_rating_data(self, symbol: str) -> Optional[Dict]:
+    def get_eps_rating_data(self, symbol: str) -> Optional[Dict]:
         """
         Get EPS rating data and IPO date from yfinance for a symbol.
 
@@ -208,6 +208,9 @@ class DataSourceService:
         )
         eps_data = {key: yf_data.get(key) for key in keys if yf_data.get(key) is not None}
         return eps_data or None
+
+    def _get_eps_rating_data(self, symbol: str) -> Optional[Dict]:
+        return self.get_eps_rating_data(symbol)
 
     def get_quarterly_growth(
         self,
