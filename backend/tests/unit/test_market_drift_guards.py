@@ -7,6 +7,8 @@ exception dictionaries as each consumer moves behind Market Catalog.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import re
 from pathlib import Path
 
@@ -14,7 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.api.v1 import breadth, groups
+from app.api.v1 import breadth, groups, scans
 from app.domain.markets import SUPPORTED_MARKET_CODES, market_registry
 from app.domain.markets.catalog import get_market_catalog
 from app.models.stock_universe import StockUniverse, UNIVERSE_STATUS_ACTIVE
@@ -78,13 +80,8 @@ def _catalog_codes() -> list[str]:
     return get_market_catalog().supported_market_codes()
 
 
-def _catalog_market_codes_by_capability(capability: str) -> set[str]:
-    catalog = get_market_catalog()
-    return {
-        code
-        for code in catalog.supported_market_codes()
-        if getattr(catalog.get(code).capabilities, capability)
-    }
+def _catalog_market_codes_by_capability(capability: str) -> tuple[str, ...]:
+    return get_market_catalog().market_codes_with_capability(capability)
 
 
 def _make_session():
@@ -276,4 +273,50 @@ def test_endpoint_capability_allowlists_match_catalog_capabilities() -> None:
     )
     assert groups.SUPPORTED_GROUP_MARKETS == _catalog_market_codes_by_capability(
         "group_rankings"
+    )
+    assert scans.SUPPORTED_SCAN_REFRESH_MARKETS == _catalog_market_codes_by_capability(
+        "fundamentals"
+    )
+
+
+def _assert_allowlist_assigned_from_capability_query(module, constant_name: str) -> None:
+    tree = ast.parse(inspect.getsource(module))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == constant_name
+            for target in node.targets
+        ):
+            continue
+        call = node.value
+        assert isinstance(call, ast.Call), (
+            f"{module.__name__}.{constant_name} must be assigned from a "
+            "Market Catalog capability query, not a local literal/comprehension"
+        )
+        function_name = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else call.func.attr
+            if isinstance(call.func, ast.Attribute)
+            else None
+        )
+        assert function_name == "market_codes_with_capability"
+        return
+
+    raise AssertionError(f"{module.__name__}.{constant_name} is missing")
+
+
+def test_endpoint_capability_allowlists_are_catalog_queries_not_local_lists() -> None:
+    _assert_allowlist_assigned_from_capability_query(
+        breadth,
+        "SUPPORTED_BREADTH_MARKETS",
+    )
+    _assert_allowlist_assigned_from_capability_query(
+        groups,
+        "SUPPORTED_GROUP_MARKETS",
+    )
+    _assert_allowlist_assigned_from_capability_query(
+        scans,
+        "SUPPORTED_SCAN_REFRESH_MARKETS",
     )

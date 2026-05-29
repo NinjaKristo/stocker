@@ -43,6 +43,39 @@ def test_market_catalog_index_summaries_derive_from_index_registry() -> None:
         )
 
 
+def test_market_catalog_filters_market_codes_by_capability_in_runtime_order() -> None:
+    catalog = get_market_catalog()
+
+    assert catalog.market_codes_with_capability("breadth") == (
+        "US",
+        "HK",
+        "IN",
+        "JP",
+        "KR",
+        "TW",
+        "CN",
+        "CA",
+        "DE",
+    )
+    assert catalog.market_codes_with_capability("group_rankings") == (
+        "US",
+        "HK",
+        "IN",
+        "JP",
+        "KR",
+        "TW",
+        "CN",
+        "CA",
+    )
+
+
+def test_market_catalog_rejects_unknown_capability_filter() -> None:
+    catalog = get_market_catalog()
+
+    with pytest.raises(MarketCatalogError, match="Unsupported market capability"):
+        catalog.market_codes_with_capability("not_a_capability")
+
+
 def test_market_catalog_entry_exposes_canonical_mic_and_currency_facts() -> None:
     catalog = get_market_catalog()
 

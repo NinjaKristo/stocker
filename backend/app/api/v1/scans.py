@@ -28,10 +28,10 @@ from ...schemas.scanning import (
 from ...schemas.ui_view_snapshot import UISnapshotEnvelope
 from ...database import SessionLocal
 from ...domain.markets import market_registry
+from ...domain.markets.catalog import get_market_catalog
 from ...domain.universe.indexes import index_registry
 from ...services.market_activity_gate import MarketActivityGate, MarketGateConflict
 from ...services.market_activity_service import get_runtime_activity_status
-from ...tasks.market_queues import SUPPORTED_MARKETS
 from ...wiring.bootstrap import (
     get_uow,
     get_create_scan_use_case,
@@ -51,6 +51,10 @@ from ...use_cases.scanning.create_scan import ActiveScanConflictError, StaleMark
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+_market_catalog = get_market_catalog()
+SUPPORTED_SCAN_REFRESH_MARKETS = _market_catalog.market_codes_with_capability(
+    "fundamentals"
+)
 
 
 class ScanCacheRefreshRequest(BaseModel):
@@ -63,8 +67,8 @@ class ScanCacheRefreshRequest(BaseModel):
 def _normalize_scan_refresh_market(market: str) -> str:
     """Require an explicit market partition for scan recovery refreshes."""
     normalized = str(market or "").strip().upper()
-    if normalized not in SUPPORTED_MARKETS:
-        supported = ", ".join(SUPPORTED_MARKETS)
+    if normalized not in SUPPORTED_SCAN_REFRESH_MARKETS:
+        supported = ", ".join(SUPPORTED_SCAN_REFRESH_MARKETS)
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported market '{market}'. Expected one of: {supported}.",

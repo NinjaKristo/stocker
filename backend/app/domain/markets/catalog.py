@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Iterable
 
 from .mic import MicFacts
@@ -143,6 +143,19 @@ class MarketCatalog:
 
     def supported_market_codes(self) -> list[str]:
         return [entry.code for entry in self._entries]
+
+    def market_codes_with_capability(self, capability: str) -> tuple[str, ...]:
+        supported_capabilities = {field.name for field in fields(MarketCapabilities)}
+        if capability not in supported_capabilities:
+            supported = ", ".join(sorted(supported_capabilities))
+            raise MarketCatalogError(
+                f"Unsupported market capability {capability!r}. Supported: {supported}"
+            )
+        return tuple(
+            entry.code
+            for entry in self._entries
+            if getattr(entry.capabilities, capability)
+        )
 
     def get(self, market: str | None) -> MarketCatalogEntry:
         code = (market or "").strip().upper()
