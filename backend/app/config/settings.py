@@ -236,6 +236,13 @@ class Settings(BaseSettings):
     # under a 100-page ceiling. The cap exists so a runaway ``totalPages``
     # value in a malformed response cannot trigger an unbounded fetch loop.
     my_universe_max_pages: int = 100
+    # ASX public listed-company CSV. Live fetch is enabled by default because ASX
+    # publishes a stable CSV link from its official site; the repo CSV is fallback.
+    au_universe_source_url: str = "https://www.asx.com.au/asx/research/ASXListedCompanies.csv"
+    au_universe_fallback_csv_path: str = str(
+        _PROJECT_ROOT / "data" / "au_asx_listed_companies.csv"
+    )
+    au_live_min_universe_size: int = 1500
     ibd_industry_csv_path: str = str(_PROJECT_ROOT / "data" / "IBD_industry_group.csv")
 
     # Per-market rate budget overrides. Each value is in requests-per-second

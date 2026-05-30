@@ -1,4 +1,4 @@
-"""Fetch and parse official exchange universe snapshots for HK, IN, JP, KR, TW, CN, CA, DE, SG, and MY.
+"""Fetch and parse official exchange universe snapshots for HK, IN, JP, KR, TW, CN, CA, DE, SG, MY, and AU.
 
 MY (Bursa Malaysia) supports two paths: a live JSON fetch driven by
 ``MY_UNIVERSE_SOURCE_URL`` (walks the paginated Bursa equities listing
@@ -61,6 +61,9 @@ _MY_FALLBACK_SOURCE_NAME = "my_manual_csv"
 # Bursa issuer codes are exactly four numeric digits; the live parser drops
 # rows whose ticker token cannot be canonicalized to ``<NNNN>.KL``.
 _MY_LIVE_TICKER_RE = re.compile(r"^[0-9]{4}$")
+_AU_SOURCE_NAME = "asx_official_public_csv"
+_AU_FALLBACK_SOURCE_NAME = "au_manual_csv"
+_AU_LIVE_TICKER_RE = re.compile(r"^[A-Z0-9]{2,6}$")
 # Bursa labels boards in several formats: ``MAIN MARKET``, ``MAIN-MKT``,
 # ``MAIN_MKT``, sometimes bare ``MAIN``. ACE follows the same shape. LEAP
 # Market (private-investor venue) and structured-product boards are excluded.
@@ -239,6 +242,8 @@ class OfficialMarketUniverseSourceService:
             return self.fetch_sg_snapshot()
         if normalized_market == "MY":
             return self.fetch_my_snapshot()
+        if normalized_market == "AU":
+            return self.fetch_au_snapshot()
         raise ValueError(f"Official universe refresh is unsupported for market {market!r}")
 
     def fetch_hk_snapshot(self) -> OfficialMarketUniverseSnapshot:
@@ -1577,6 +1582,126 @@ class OfficialMarketUniverseSourceService:
             rows=tuple(rows),
         )
 
+    def fetch_au_snapshot(self) -> OfficialMarketUniverseSnapshot:
+        """Fetch the AU equity universe from ASX's public listed-company CSV.
+
+        ASX publishes a stable CSV link with a preamble line before the
+        ``Company name,ASX code,GICS industry group`` header. The live CSV is
+        attempted first by default; unreachable, unparsable, empty, or tiny
+        live responses fall back to the bundled ASX CSV.
+        """
+        fetch_mode = "live_http"
+        fetch_errors: dict[str, str] = {}
+        fetched_at: str | None = None
+        last_modified: str | None = None
+        tls_verification_disabled = False
+        rows: list[dict[str, Any]] = []
+
+        if settings.au_universe_source_url:
+            try:
+                live_meta = self._fetch_au_live()
+            except (requests.exceptions.RequestException, ValueError) as exc:
+                live_error = str(exc)
+                print(
+                    f"[au] Live universe fetch failed: {live_error!s}. "
+                    f"Falling back to bundled CSV at {settings.au_universe_fallback_csv_path}.",
+                    flush=True,
+                )
+                logger.warning(
+                    "Live AU universe fetch failed (%s); falling back to bundled CSV at %s",
+                    live_error,
+                    settings.au_universe_fallback_csv_path,
+                )
+                fetch_errors["live_http"] = live_error
+                rows = self._load_au_csv_fallback()
+                fetch_mode = "csv_fallback"
+                fetched_at = datetime.now(UTC).isoformat()
+            else:
+                rows = live_meta["rows"]
+                fetched_at = live_meta.get("fetched_at")
+                last_modified = live_meta.get("http_last_modified")
+                tls_verification_disabled = bool(live_meta.get("tls_verification_disabled"))
+                print(
+                    f"[au] Live universe fetch succeeded: {len(rows)} rows "
+                    f"from {settings.au_universe_source_url}",
+                    flush=True,
+                )
+        else:
+            logger.info(
+                "AU universe source URL is blank; using bundled fallback CSV at %s",
+                settings.au_universe_fallback_csv_path,
+            )
+            rows = self._load_au_csv_fallback()
+            fetch_mode = "csv_fallback"
+            fetched_at = datetime.now(UTC).isoformat()
+
+        if not rows:
+            raise ValueError(
+                "AU official universe fetch returned no rows (live + fallback both empty)"
+            )
+        min_size = int(settings.au_live_min_universe_size or 0)
+        if fetch_mode == "csv_fallback" and min_size and len(rows) < min_size:
+            raise ValueError(
+                "AU official universe fetch returned "
+                f"{len(rows)} rows from fallback CSV, below {min_size} threshold"
+            )
+
+        rows = sorted(rows, key=lambda row: row["symbol"])
+        snapshot_as_of = (
+            self._date_from_http_header(last_modified) or self._utc_today()
+        ).isoformat()
+        source_name = (
+            _AU_FALLBACK_SOURCE_NAME if fetch_mode == "csv_fallback" else _AU_SOURCE_NAME
+        )
+        source_metadata: dict[str, Any] = {
+            "source_urls": [settings.au_universe_source_url] if settings.au_universe_source_url else [],
+            "fetched_at": fetched_at or datetime.now(UTC).isoformat(),
+            "http_last_modified": last_modified,
+            "tls_verification_disabled": tls_verification_disabled,
+            "fetch_mode": fetch_mode,
+            "fetch_errors": fetch_errors,
+            "row_counts": {
+                "xasx": len(rows),
+                "total": len(rows),
+            },
+        }
+        if fetch_mode == "csv_fallback":
+            source_metadata["fallback_csv_path"] = settings.au_universe_fallback_csv_path
+
+        snapshot_id_prefix = (
+            "asx-listed-companies" if fetch_mode == "live_http" else "au-csv-fallback"
+        )
+        return OfficialMarketUniverseSnapshot(
+            market="AU",
+            source_name=source_name,
+            snapshot_id=f"{snapshot_id_prefix}-{snapshot_as_of}",
+            snapshot_as_of=snapshot_as_of,
+            source_metadata=source_metadata,
+            rows=tuple(rows),
+        )
+
+    def _fetch_au_live(self) -> dict[str, Any]:
+        """Download and parse the ASX listed companies CSV."""
+        fetched = self._http_get(settings.au_universe_source_url)
+        rows = self._parse_au_asx_csv(fetched.content)
+        if not rows:
+            raise ValueError("ASX CSV yielded no equity rows after filtering")
+
+        min_universe_size = int(getattr(settings, "au_live_min_universe_size", 0) or 0)
+        if min_universe_size > 0 and len(rows) < min_universe_size:
+            raise ValueError(
+                f"AU live universe has only {len(rows)} rows "
+                f"(below {min_universe_size} threshold); refusing to publish - "
+                "the ASX CSV response shape may have changed"
+            )
+
+        return {
+            "rows": sorted(rows, key=lambda row: row["symbol"]),
+            "fetched_at": fetched.fetched_at,
+            "http_last_modified": fetched.last_modified,
+            "tls_verification_disabled": fetched.tls_verification_disabled,
+        }
+
     def _fetch_my_live(self) -> dict[str, Any]:
         """Download and parse the Bursa Malaysia equities-listing API response.
 
@@ -1895,6 +2020,56 @@ class OfficialMarketUniverseSourceService:
                 }
             )
         return sorted(rows, key=lambda row: row["symbol"])
+
+    @classmethod
+    def _parse_au_asx_csv(cls, content: bytes) -> list[dict[str, Any]]:
+        """Parse ASX's public listed-company CSV with dynamic header detection."""
+        text = content.decode("utf-8-sig", errors="replace")
+        lines = text.splitlines()
+        header_index: int | None = None
+        expected_header = "company name,asx code,gics industry group"
+        for index, line in enumerate(lines):
+            if line.strip().lower().startswith(expected_header):
+                header_index = index
+                break
+        if header_index is None:
+            raise ValueError("ASX CSV header not found")
+
+        csv_text = "\n".join(lines[header_index:])
+        reader = csv.DictReader(io.StringIO(csv_text))
+        rows: list[dict[str, Any]] = []
+        seen_codes: set[str] = set()
+        for record in reader:
+            name = str(record.get("Company name") or "").strip()
+            local_code = str(record.get("ASX code") or "").strip().upper()
+            gics = str(record.get("GICS industry group") or "").strip()
+            if not name or not local_code:
+                continue
+            if not _AU_LIVE_TICKER_RE.fullmatch(local_code):
+                continue
+            if local_code in seen_codes:
+                continue
+            seen_codes.add(local_code)
+            rows.append(
+                {
+                    "symbol": f"{local_code}.AX",
+                    "local_code": local_code,
+                    "name": name,
+                    "exchange": "XASX",
+                    "sector": "",
+                    "industry": gics,
+                    "gics_industry_group": gics,
+                    "market_cap": None,
+                }
+            )
+        return rows
+
+    @classmethod
+    def _load_au_csv_fallback(cls) -> list[dict[str, Any]]:
+        csv_path = Path(settings.au_universe_fallback_csv_path)
+        if not csv_path.exists():
+            return []
+        return cls._parse_au_asx_csv(csv_path.read_bytes())
 
     def _fetch_sg_live(self) -> dict[str, Any]:
         """Download and parse the SGX securities JSON API response.

@@ -2298,3 +2298,147 @@ def test_with_query_param_replaces_existing_value_and_appends_missing():
     assert method(
         "https://example.com/api", "page", "1"
     ) == "https://example.com/api?page=1"
+
+
+# ---------------------------------------------------------------------------
+# Australia (ASX) live CSV fetch
+# ---------------------------------------------------------------------------
+
+_AU_ASX_URL = "https://www.asx.com.au/asx/research/ASXListedCompanies.csv"
+
+
+def _fetched_au(
+    content: bytes,
+    *,
+    url: str = _AU_ASX_URL,
+    last_modified: str | None = None,
+) -> _FetchedSource:
+    return _FetchedSource(
+        url=url,
+        content=content,
+        fetched_at="2026-05-30T00:00:00+00:00",
+        last_modified=last_modified,
+        tls_verification_disabled=False,
+    )
+
+
+def _au_fallback_csv_text(count: int = 1) -> str:
+    rows = [
+        "ASX listed companies as at Sat May 30 00:00:00 AEST 2026",
+        "",
+        "Company name,ASX code,GICS industry group",
+    ]
+    for idx in range(count):
+        if idx == 0:
+            rows.append('"BHP GROUP LIMITED","BHP","Materials"')
+        else:
+            rows.append(f'"Issuer {idx}","A{idx:03d}","Capital Goods"')
+    return "\n".join(rows) + "\n"
+
+
+def test_fetch_au_snapshot_parses_asx_live_csv(monkeypatch):
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "au_universe_source_url", _AU_ASX_URL)
+    monkeypatch.setattr(app_settings, "au_live_min_universe_size", 1)
+
+    service = OfficialMarketUniverseSourceService()
+    monkeypatch.setattr(
+        service,
+        "_http_get",
+        lambda url, allow_insecure_fallback=False, extra_headers=None: _fetched_au(
+            _fixture_bytes("asx_listed_companies_fixture.csv")
+        ),
+    )
+
+    snapshot = service.fetch_market_snapshot("AU")
+
+    assert snapshot.market == "AU"
+    assert snapshot.source_name == "asx_official_public_csv"
+    assert snapshot.source_metadata["fetch_mode"] == "live_http"
+    assert snapshot.snapshot_id.startswith("asx-listed-companies-")
+    symbols = [row["symbol"] for row in snapshot.rows]
+    assert symbols == ["14D.AX", "BHP.AX", "CBA.AX"]
+    by_symbol = {row["symbol"]: row for row in snapshot.rows}
+    assert by_symbol["14D.AX"]["exchange"] == "XASX"
+    assert by_symbol["14D.AX"]["industry"] == "Capital Goods"
+
+
+def test_fetch_au_snapshot_falls_back_on_http_error(monkeypatch, tmp_path):
+    from app.config import settings as app_settings
+
+    fallback_csv = tmp_path / "au_fallback.csv"
+    fallback_csv.write_text(_au_fallback_csv_text(2), encoding="utf-8")
+    monkeypatch.setattr(app_settings, "au_universe_source_url", _AU_ASX_URL)
+    monkeypatch.setattr(app_settings, "au_universe_fallback_csv_path", str(fallback_csv))
+    monkeypatch.setattr(app_settings, "au_live_min_universe_size", 0)
+
+    service = OfficialMarketUniverseSourceService()
+    monkeypatch.setattr(
+        service,
+        "_http_get",
+        lambda url, allow_insecure_fallback=False, extra_headers=None: (_ for _ in ()).throw(
+            requests.exceptions.ConnectionError("synthetic ASX outage")
+        ),
+    )
+
+    snapshot = service.fetch_market_snapshot("AU")
+
+    assert snapshot.source_name == "au_manual_csv"
+    assert snapshot.source_metadata["fetch_mode"] == "csv_fallback"
+    assert "synthetic ASX outage" in snapshot.source_metadata["fetch_errors"]["live_http"]
+    assert {row["symbol"] for row in snapshot.rows} == {"BHP.AX", "A001.AX"}
+    assert snapshot.snapshot_id.startswith("au-csv-fallback-")
+    assert snapshot.source_metadata["fallback_csv_path"] == str(fallback_csv)
+
+
+def test_fetch_au_snapshot_uses_fallback_when_url_blank(monkeypatch, tmp_path):
+    from app.config import settings as app_settings
+
+    fallback_csv = tmp_path / "au_fallback.csv"
+    fallback_csv.write_text(_au_fallback_csv_text(), encoding="utf-8")
+    monkeypatch.setattr(app_settings, "au_universe_source_url", "")
+    monkeypatch.setattr(app_settings, "au_universe_fallback_csv_path", str(fallback_csv))
+    monkeypatch.setattr(app_settings, "au_live_min_universe_size", 0)
+
+    service = OfficialMarketUniverseSourceService()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("_http_get must not be called when source URL is blank")
+
+    monkeypatch.setattr(service, "_http_get", fail_if_called)
+
+    snapshot = service.fetch_market_snapshot("AU")
+
+    assert snapshot.source_name == "au_manual_csv"
+    assert snapshot.source_metadata["fetch_mode"] == "csv_fallback"
+    assert [row["symbol"] for row in snapshot.rows] == ["BHP.AX"]
+
+
+def test_fetch_au_snapshot_rejects_tiny_fallback_csv(monkeypatch, tmp_path):
+    from app.config import settings as app_settings
+
+    fallback_csv = tmp_path / "au_tiny.csv"
+    fallback_csv.write_text(_au_fallback_csv_text(2), encoding="utf-8")
+    monkeypatch.setattr(app_settings, "au_universe_source_url", "")
+    monkeypatch.setattr(app_settings, "au_universe_fallback_csv_path", str(fallback_csv))
+    monkeypatch.setattr(app_settings, "au_live_min_universe_size", 1500)
+
+    service = OfficialMarketUniverseSourceService()
+
+    with pytest.raises(ValueError, match="below 1500 threshold"):
+        service.fetch_market_snapshot("AU")
+
+
+def test_parse_au_asx_csv_raises_on_missing_header():
+    with pytest.raises(ValueError, match="ASX CSV header not found"):
+        OfficialMarketUniverseSourceService._parse_au_asx_csv(
+            b"Company,Code,Industry\nBHP,BHP,Materials\n"
+        )
+
+
+def test_bundled_au_fallback_covers_broad_asx_universe():
+    rows = OfficialMarketUniverseSourceService._load_au_csv_fallback()
+
+    assert len(rows) >= 1500
+    assert any(row["symbol"] in {"BHP.AX", "CBA.AX"} for row in rows)
