@@ -26,6 +26,7 @@ from .transient_database import raise_if_transient_database_error
 logger = logging.getLogger(__name__)
 
 _OFFICIAL_UNIVERSE_INGEST_METHODS = {
+    "AU": "ingest_au_snapshot_rows",
     "HK": "ingest_hk_snapshot_rows",
     "IN": "ingest_in_snapshot_rows",
     "JP": "ingest_jp_snapshot_rows",

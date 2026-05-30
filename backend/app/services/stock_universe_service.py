@@ -43,6 +43,7 @@ from ..domain.universe.ingestion import (
     UniverseIngestionSideEffects,
     UniverseReconciliationPolicy,
 )
+from .au_universe_ingestion_adapter import au_universe_ingestion_adapter
 from .ca_universe_ingestion_adapter import ca_universe_ingestion_adapter
 from .cn_universe_ingestion_adapter import cn_universe_ingestion_adapter
 from .de_universe_ingestion_adapter import de_universe_ingestion_adapter
@@ -89,6 +90,7 @@ class StockUniverseService:
     def __init__(self):
         """Initialize stock universe service."""
         self._security_master = security_master_resolver
+        self._au_ingestion = au_universe_ingestion_adapter
         self._ca_ingestion = ca_universe_ingestion_adapter
         self._cn_ingestion = cn_universe_ingestion_adapter
         self._de_ingestion = de_universe_ingestion_adapter
@@ -102,6 +104,7 @@ class StockUniverseService:
         self._universe_ingestion_pipeline = UniverseIngestionPipeline(
             canonicalizers={
                 "US": self._finviz_ingestion,
+                "AU": self._au_ingestion,
                 "HK": FlatUniverseCanonicalizerAdapter(self._hk_ingestion),
                 "JP": FlatUniverseCanonicalizerAdapter(self._jp_ingestion),
                 "KR": FlatUniverseCanonicalizerAdapter(self._kr_ingestion),
@@ -1529,6 +1532,29 @@ class StockUniverseService:
                 "IN",
                 reconciliation_policy=self._default_reconciliation_policy_for_market("IN"),
             ),
+        )
+
+    def ingest_au_snapshot_rows(
+        self,
+        db: Session,
+        *,
+        rows: Iterable[dict[str, Any]],
+        source_name: str,
+        snapshot_id: str,
+        snapshot_as_of: str | None = None,
+        source_metadata: Optional[dict[str, Any]] = None,
+        strict: bool = True,
+    ) -> Dict[str, Any]:
+        """Ingest AU rows with deterministic canonicalization and lineage metadata."""
+        return self._ingest_snapshot_rows_via_pipeline(
+            db,
+            market="AU",
+            rows=rows,
+            source_name=source_name,
+            snapshot_id=snapshot_id,
+            snapshot_as_of=snapshot_as_of,
+            source_metadata=source_metadata,
+            strict=strict,
         )
 
     @staticmethod

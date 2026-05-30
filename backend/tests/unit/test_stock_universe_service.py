@@ -19,6 +19,7 @@ from app.models.stock_universe import (
 )
 from app.models.stock import StockIndustry
 from app.models.ticker_validation import TickerValidationLog
+from app.services.au_universe_ingestion_adapter import au_universe_ingestion_adapter
 from app.services.stock_universe_service import StockUniverseService
 
 stock_universe_service = StockUniverseService()
@@ -99,6 +100,7 @@ def _make_session():
 @pytest.mark.parametrize(
     ("market", "method_name"),
     [
+        ("AU", "ingest_au_snapshot_rows"),
         ("HK", "ingest_hk_snapshot_rows"),
         ("JP", "ingest_jp_snapshot_rows"),
         ("KR", "ingest_kr_snapshot_rows"),
@@ -147,6 +149,16 @@ def test_official_market_ingest_methods_delegate_to_shared_pipeline(
     assert ingestion_context.row_source == f"{market.lower()}_ingest"
     assert ingestion_context.reconciliation_policy.name == f"{market.lower()}_market_default"
     db.close()
+
+
+def test_stock_universe_service_wires_au_canonicalizer_in_shared_pipeline():
+    service = StockUniverseService()
+
+    assert service._au_ingestion is au_universe_ingestion_adapter
+    assert (
+        service._universe_ingestion_pipeline._canonicalizers["AU"]
+        is au_universe_ingestion_adapter
+    )
 
 
 def test_in_ingest_delegates_filtered_result_to_shared_pipeline():
