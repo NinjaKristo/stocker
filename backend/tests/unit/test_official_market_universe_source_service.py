@@ -2322,9 +2322,13 @@ def _fetched_au(
     )
 
 
-def _au_fallback_csv_text(count: int = 1) -> str:
+def _au_fallback_csv_text(
+    count: int = 1,
+    *,
+    preamble: str = "ASX listed companies as at Sat May 30 00:00:00 AEST 2026",
+) -> str:
     rows = [
-        "ASX listed companies as at Sat May 30 00:00:00 AEST 2026",
+        preamble,
         "",
         "Company name,ASX code,GICS industry group",
     ]
@@ -2355,7 +2359,14 @@ def test_fetch_au_snapshot_parses_asx_live_csv(monkeypatch):
 
     assert snapshot.market == "AU"
     assert snapshot.source_name == "asx_official_public_csv"
+    assert snapshot.snapshot_as_of == "2026-05-30"
     assert snapshot.source_metadata["fetch_mode"] == "live_http"
+    assert snapshot.source_metadata["source_urls"] == [_AU_ASX_URL]
+    assert snapshot.source_metadata["row_counts"] == {"xasx": 3, "total": 3}
+    assert snapshot.source_metadata["filters"] == {
+        "source": "ASX listed companies public CSV",
+        "symbol_regex": r"^[A-Z0-9]{2,6}$",
+    }
     assert snapshot.snapshot_id.startswith("asx-listed-companies-")
     symbols = [row["symbol"] for row in snapshot.rows]
     assert symbols == ["14D.AX", "BHP.AX", "CBA.AX"]
@@ -2368,7 +2379,13 @@ def test_fetch_au_snapshot_falls_back_on_http_error(monkeypatch, tmp_path):
     from app.config import settings as app_settings
 
     fallback_csv = tmp_path / "au_fallback.csv"
-    fallback_csv.write_text(_au_fallback_csv_text(2), encoding="utf-8")
+    fallback_csv.write_text(
+        _au_fallback_csv_text(
+            2,
+            preamble="ASX listed companies as at Fri May 29 00:00:00 AEST 2026",
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(app_settings, "au_universe_source_url", _AU_ASX_URL)
     monkeypatch.setattr(app_settings, "au_universe_fallback_csv_path", str(fallback_csv))
     monkeypatch.setattr(app_settings, "au_live_min_universe_size", 0)
@@ -2385,8 +2402,15 @@ def test_fetch_au_snapshot_falls_back_on_http_error(monkeypatch, tmp_path):
     snapshot = service.fetch_market_snapshot("AU")
 
     assert snapshot.source_name == "au_manual_csv"
+    assert snapshot.snapshot_as_of == "2026-05-29"
     assert snapshot.source_metadata["fetch_mode"] == "csv_fallback"
     assert "synthetic ASX outage" in snapshot.source_metadata["fetch_errors"]["live_http"]
+    assert snapshot.source_metadata["source_urls"] == [_AU_ASX_URL]
+    assert snapshot.source_metadata["row_counts"] == {"xasx": 2, "total": 2}
+    assert snapshot.source_metadata["filters"] == {
+        "source": "ASX listed companies public CSV",
+        "symbol_regex": r"^[A-Z0-9]{2,6}$",
+    }
     assert {row["symbol"] for row in snapshot.rows} == {"BHP.AX", "A001.AX"}
     assert snapshot.snapshot_id.startswith("au-csv-fallback-")
     assert snapshot.source_metadata["fallback_csv_path"] == str(fallback_csv)

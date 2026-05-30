@@ -1594,6 +1594,7 @@ class OfficialMarketUniverseSourceService:
         fetch_errors: dict[str, str] = {}
         fetched_at: str | None = None
         last_modified: str | None = None
+        as_of: date | None = None
         tls_verification_disabled = False
         rows: list[dict[str, Any]] = []
 
@@ -1613,13 +1614,16 @@ class OfficialMarketUniverseSourceService:
                     settings.au_universe_fallback_csv_path,
                 )
                 fetch_errors["live_http"] = live_error
-                rows = self._load_au_csv_fallback()
+                fallback_meta = self._load_au_csv_fallback_meta()
+                rows = fallback_meta["rows"]
+                as_of = fallback_meta.get("as_of")
                 fetch_mode = "csv_fallback"
                 fetched_at = datetime.now(UTC).isoformat()
             else:
                 rows = live_meta["rows"]
                 fetched_at = live_meta.get("fetched_at")
                 last_modified = live_meta.get("http_last_modified")
+                as_of = live_meta.get("as_of")
                 tls_verification_disabled = bool(live_meta.get("tls_verification_disabled"))
                 print(
                     f"[au] Live universe fetch succeeded: {len(rows)} rows "
@@ -1631,7 +1635,9 @@ class OfficialMarketUniverseSourceService:
                 "AU universe source URL is blank; using bundled fallback CSV at %s",
                 settings.au_universe_fallback_csv_path,
             )
-            rows = self._load_au_csv_fallback()
+            fallback_meta = self._load_au_csv_fallback_meta()
+            rows = fallback_meta["rows"]
+            as_of = fallback_meta.get("as_of")
             fetch_mode = "csv_fallback"
             fetched_at = datetime.now(UTC).isoformat()
 
@@ -1648,7 +1654,7 @@ class OfficialMarketUniverseSourceService:
 
         rows = sorted(rows, key=lambda row: row["symbol"])
         snapshot_as_of = (
-            self._date_from_http_header(last_modified) or self._utc_today()
+            as_of or self._date_from_http_header(last_modified) or self._utc_today()
         ).isoformat()
         source_name = (
             _AU_FALLBACK_SOURCE_NAME if fetch_mode == "csv_fallback" else _AU_SOURCE_NAME
@@ -1660,6 +1666,10 @@ class OfficialMarketUniverseSourceService:
             "tls_verification_disabled": tls_verification_disabled,
             "fetch_mode": fetch_mode,
             "fetch_errors": fetch_errors,
+            "filters": {
+                "source": "ASX listed companies public CSV",
+                "symbol_regex": _AU_LIVE_TICKER_RE.pattern,
+            },
             "row_counts": {
                 "xasx": len(rows),
                 "total": len(rows),
@@ -1684,6 +1694,7 @@ class OfficialMarketUniverseSourceService:
         """Download and parse the ASX listed companies CSV."""
         fetched = self._http_get(settings.au_universe_source_url)
         rows = self._parse_au_asx_csv(fetched.content)
+        as_of = self._extract_au_asx_as_of(fetched.content)
         if not rows:
             raise ValueError("ASX CSV yielded no equity rows after filtering")
 
@@ -1699,6 +1710,7 @@ class OfficialMarketUniverseSourceService:
             "rows": sorted(rows, key=lambda row: row["symbol"]),
             "fetched_at": fetched.fetched_at,
             "http_last_modified": fetched.last_modified,
+            "as_of": as_of,
             "tls_verification_disabled": fetched.tls_verification_disabled,
         }
 
@@ -2065,11 +2077,37 @@ class OfficialMarketUniverseSourceService:
         return rows
 
     @classmethod
+    def _extract_au_asx_as_of(cls, content: bytes) -> date | None:
+        text = content.decode("utf-8-sig", errors="replace")
+        first_line = text.splitlines()[0].strip() if text.splitlines() else ""
+        match = re.fullmatch(
+            r"ASX listed companies as at (.+?) [A-Z]{2,5} (\d{4})",
+            first_line,
+        )
+        if not match:
+            return None
+        try:
+            return datetime.strptime(
+                f"{match.group(1)} {match.group(2)}",
+                "%a %b %d %H:%M:%S %Y",
+            ).date()
+        except ValueError:
+            return None
+
+    @classmethod
     def _load_au_csv_fallback(cls) -> list[dict[str, Any]]:
+        return cls._load_au_csv_fallback_meta()["rows"]
+
+    @classmethod
+    def _load_au_csv_fallback_meta(cls) -> dict[str, Any]:
         csv_path = Path(settings.au_universe_fallback_csv_path)
         if not csv_path.exists():
-            return []
-        return cls._parse_au_asx_csv(csv_path.read_bytes())
+            return {"rows": [], "as_of": None}
+        content = csv_path.read_bytes()
+        return {
+            "rows": cls._parse_au_asx_csv(content),
+            "as_of": cls._extract_au_asx_as_of(content),
+        }
 
     def _fetch_sg_live(self) -> dict[str, Any]:
         """Download and parse the SGX securities JSON API response.
