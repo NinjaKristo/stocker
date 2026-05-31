@@ -22,12 +22,20 @@ from app.domain.markets.catalog import get_market_catalog
 from app.models.stock_universe import StockUniverse, UNIVERSE_STATUS_ACTIVE
 from app.services import provider_routing_policy
 from app.services.field_capability_registry import field_capability_registry
+from app.services.official_market_universe_source_service import (
+    OfficialMarketUniverseSourceService,
+)
+from app.services.official_universe_dispatch import (
+    OFFICIAL_SOURCE_MARKETS,
+    OFFICIAL_UNIVERSE_INGEST_METHODS,
+)
 from app.services.security_master_service import SecurityMasterResolver
 from app.services.universe_row_facts import (
     active_universe_currency_drift,
     active_universe_timezone_drift,
 )
 from app.tasks import market_queues
+from app.domain.universe.indexes import index_registry
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2].parent
@@ -43,6 +51,8 @@ DOCUMENTED_CATALOG_MIC_CODES: dict[str, set[str]] = {
     "CA": {"XTSE", "XTNX"},
     "DE": {"XETR", "XFRA"},
     "SG": {"XSES"},
+    "AU": {"XASX"},
+    "MY": {"XKLS"},
 }
 
 DOCUMENTED_CATALOG_ALIAS_CODES: dict[str, set[str]] = {
@@ -56,6 +66,8 @@ DOCUMENTED_CATALOG_ALIAS_CODES: dict[str, set[str]] = {
     "CA": {"TSX", "TSXV"},
     "DE": {"XETRA", "FRA", "FWB"},
     "SG": {"SGX", "SES"},
+    "AU": {"ASX"},
+    "MY": {"KLSE", "MYX", "BURSA"},
 }
 
 DOCUMENTED_CATALOG_CANONICAL_MICS: dict[str, tuple[str, ...]] = {
@@ -69,6 +81,8 @@ DOCUMENTED_CATALOG_CANONICAL_MICS: dict[str, tuple[str, ...]] = {
     "CA": ("XTSE", "XTNX"),
     "DE": ("XETR", "XFRA"),
     "SG": ("XSES",),
+    "AU": ("XASX",),
+    "MY": ("XKLS",),
 }
 
 DOCUMENTED_REGISTRY_ONLY_EXCHANGE_ALIASES: dict[str, set[str]] = {}
@@ -100,6 +114,72 @@ def _fallback_catalog_codes_from_frontend() -> list[str]:
         "export const DEFAULT_MARKET_CATALOG = {", maxsplit=1
     )[1].split("const DEFAULT_SUPPORTED_MARKETS", maxsplit=1)[0]
     return re.findall(r"code:\s*'([A-Z]{2})'", fallback_catalog)
+
+
+def _frontend_scan_geographic_market_codes() -> list[str]:
+    scan_constants = (
+        REPO_ROOT / "frontend" / "src" / "features" / "scan" / "constants.js"
+    )
+    source = scan_constants.read_text()
+    match = re.search(r"UNIVERSE_GEOGRAPHIC_MARKETS = \[([^\]]+)\]", source)
+    assert match is not None, "frontend scan market list is missing"
+    return re.findall(r"'([A-Z]{2})'", match.group(1))
+
+
+def _frontend_scan_market_options() -> dict[str, str]:
+    scan_constants = (
+        REPO_ROOT / "frontend" / "src" / "features" / "scan" / "constants.js"
+    )
+    source = scan_constants.read_text()
+    match = re.search(r"UNIVERSE_MARKETS = \[(?P<body>.*?)\n\];", source, re.S)
+    assert match is not None, "frontend scan market options are missing"
+    return {
+        value: label
+        for value, label in re.findall(
+            r"\{\s*value: '([^']+)', label: '([^']+)'\s*\}",
+            match.group("body"),
+        )
+        if value != "TEST"
+    }
+
+
+def _frontend_scan_scope_options() -> dict[str, list[tuple[str, str]]]:
+    scan_constants = (
+        REPO_ROOT / "frontend" / "src" / "features" / "scan" / "constants.js"
+    )
+    source = scan_constants.read_text()
+    body = source.split("export const UNIVERSE_SCOPES_BY_MARKET = {", maxsplit=1)[
+        1
+    ].split("\n};", maxsplit=1)[0]
+    scopes: dict[str, list[tuple[str, str]]] = {}
+    for code in (*_catalog_codes(), "TEST"):
+        match = re.search(rf"^\s*{code}: \[(?P<body>.*?)^\s*\],", body, re.S | re.M)
+        if match is None:
+            empty_match = re.search(rf"^\s*{code}: \[\],", body, re.M)
+            assert empty_match is not None, f"{code} scan scopes are missing"
+            scopes[code] = []
+            continue
+        scopes[code] = re.findall(
+            r"\{\s*value: '([^']+)', label: '([^']+)'\s*\}",
+            match.group("body"),
+        )
+    return scopes
+
+
+def _frontend_breadth_object_market_keys(object_name: str) -> list[str]:
+    breadth_page = REPO_ROOT / "frontend" / "src" / "pages" / "BreadthPage.jsx"
+    source = breadth_page.read_text()
+    match = re.search(rf"const {object_name} = \{{(?P<body>.*?)\n\}};", source, re.S)
+    assert match is not None, f"{object_name} is missing from BreadthPage"
+    return re.findall(r"^\s*([A-Z]{2}):", match.group("body"), re.M)
+
+
+def _frontend_breadth_default_supported_markets() -> list[str]:
+    breadth_page = REPO_ROOT / "frontend" / "src" / "pages" / "BreadthPage.jsx"
+    source = breadth_page.read_text()
+    match = re.search(r"supportedMarkets = \[([^\]]+)\]", source)
+    assert match is not None, "BreadthPage supportedMarkets fallback is missing"
+    return re.findall(r"'([A-Z]{2})'", match.group(1))
 
 
 def test_supported_market_code_surfaces_match_catalog_codes() -> None:
@@ -265,6 +345,65 @@ def test_bse_alias_ambiguity_is_documented_with_market_context() -> None:
 
 def test_frontend_fallback_catalog_codes_match_backend_catalog_codes() -> None:
     assert _fallback_catalog_codes_from_frontend() == _catalog_codes()
+
+
+def test_frontend_fallback_market_lists_match_backend_catalog_order() -> None:
+    catalog_codes = _catalog_codes()
+
+    assert _frontend_scan_geographic_market_codes() == catalog_codes
+    assert list(_frontend_scan_market_options()) == catalog_codes
+    assert _frontend_breadth_object_market_keys("MARKET_LABELS") == catalog_codes
+    assert (
+        _frontend_breadth_object_market_keys("MARKET_LIVE_BENCHMARK_SYMBOLS")
+        == catalog_codes
+    )
+    assert _frontend_breadth_default_supported_markets() == catalog_codes
+
+
+def test_frontend_scan_market_labels_match_backend_catalog_labels() -> None:
+    catalog = get_market_catalog()
+    frontend_labels = _frontend_scan_market_options()
+
+    assert frontend_labels == {
+        code: catalog.get(code).label for code in catalog.supported_market_codes()
+    }
+
+
+def test_frontend_scan_scope_values_match_backend_catalog_facts() -> None:
+    catalog = get_market_catalog()
+    scopes_by_market = _frontend_scan_scope_options()
+
+    assert list(scopes_by_market) == [*_catalog_codes(), "TEST"]
+    assert scopes_by_market["TEST"] == []
+    for code in catalog.supported_market_codes():
+        entry = catalog.get(code)
+        scopes = scopes_by_market[code]
+        assert scopes[0] == ("market", f"All {entry.label}")
+
+        exchange_values = [
+            value.removeprefix("exchange:")
+            for value, _label in scopes
+            if value.startswith("exchange:")
+        ]
+        assert set(exchange_values) <= set(entry.exchanges)
+
+        index_values = [
+            (value.removeprefix("index:"), label)
+            for value, label in scopes
+            if value.startswith("index:")
+        ]
+        assert index_values == [
+            (definition.key, definition.label)
+            for definition in index_registry.definitions(code)
+        ]
+
+
+def test_official_universe_dispatch_matches_backend_catalog_capability() -> None:
+    expected = set(_catalog_market_codes_by_capability("official_universe"))
+
+    assert OFFICIAL_SOURCE_MARKETS == expected
+    assert set(OFFICIAL_UNIVERSE_INGEST_METHODS) == expected
+    assert set(OfficialMarketUniverseSourceService()._snapshot_fetchers()) == expected
 
 
 def test_endpoint_capability_allowlists_match_catalog_capabilities() -> None:

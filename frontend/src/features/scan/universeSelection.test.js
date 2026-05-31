@@ -132,6 +132,7 @@ describe('parseLegacyUniverseDefault', () => {
     expect(parseLegacyUniverseDefault('market:jp')).toEqual({ market: 'JP', scope: 'market' });
     expect(parseLegacyUniverseDefault('market:kr')).toEqual({ market: 'KR', scope: 'market' });
     expect(parseLegacyUniverseDefault('market:cn')).toEqual({ market: 'CN', scope: 'market' });
+    expect(parseLegacyUniverseDefault('market:au')).toEqual({ market: 'AU', scope: 'market' });
   });
 
   // The 'all' default is deliberately ambiguous (it used to mean "all US"), so
@@ -149,9 +150,10 @@ describe('parseLegacyUniverseDefault', () => {
 describe('UNIVERSE_SCOPES_BY_MARKET', () => {
   it('exposes KOSPI and KOSDAQ scopes for Korea', () => {
     expect(UNIVERSE_SCOPES_BY_MARKET.KR).toEqual([
-      { value: 'market', label: 'All Korea' },
+      { value: 'market', label: 'All South Korea' },
       { value: 'exchange:KOSPI', label: 'KOSPI' },
       { value: 'exchange:KOSDAQ', label: 'KOSDAQ' },
+      { value: 'index:KOSPI', label: 'KOSPI Composite' },
     ]);
   });
 
@@ -161,6 +163,15 @@ describe('UNIVERSE_SCOPES_BY_MARKET', () => {
       { value: 'exchange:SSE', label: 'Shanghai Stock Exchange' },
       { value: 'exchange:SZSE', label: 'Shenzhen Stock Exchange' },
       { value: 'exchange:BJSE', label: 'Beijing Stock Exchange' },
+      { value: 'index:CSI300', label: 'CSI 300' },
+    ]);
+  });
+
+  it('exposes ASX and ASX 200 scopes for Australia', () => {
+    expect(UNIVERSE_SCOPES_BY_MARKET.AU).toEqual([
+      { value: 'market', label: 'All Australia' },
+      { value: 'exchange:XASX', label: 'ASX' },
+      { value: 'index:ASX200', label: 'S&P/ASX 200' },
     ]);
   });
 });

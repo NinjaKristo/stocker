@@ -1,4 +1,4 @@
-"""Fetch and parse official exchange universe snapshots for HK, IN, JP, KR, TW, CN, CA, DE, SG, and MY.
+"""Fetch and parse official exchange universe snapshots for HK, IN, JP, KR, TW, CN, CA, DE, SG, MY, and AU.
 
 MY (Bursa Malaysia) supports two paths: a live JSON fetch driven by
 ``MY_UNIVERSE_SOURCE_URL`` (walks the paginated Bursa equities listing
@@ -13,7 +13,6 @@ so downstream coverage gates can see the snapshot is degraded.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 import io
@@ -32,6 +31,12 @@ import requests
 import urllib3
 
 from ..config import settings
+from ..domain.markets.catalog import get_market_catalog
+from .asx_official_universe_source import ASXOfficialUniverseSource
+from .official_market_universe_types import (
+    FetchedSource as _FetchedSource,
+    OfficialMarketUniverseSnapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,27 +178,9 @@ _BSE_SOURCE_HEADERS = {
     "Accept": "application/json,*/*",
     "Referer": "https://www.bseindia.com/corporates/List_Scrips.html",
 }
-
-
-@dataclass(frozen=True)
-class OfficialMarketUniverseSnapshot:
-    """Canonical upstream snapshot ready for stock_universe ingest."""
-
-    market: str
-    source_name: str
-    snapshot_id: str
-    snapshot_as_of: str
-    source_metadata: dict[str, Any]
-    rows: tuple[dict[str, Any], ...]
-
-
-@dataclass(frozen=True)
-class _FetchedSource:
-    url: str
-    content: bytes
-    fetched_at: str
-    last_modified: str | None
-    tls_verification_disabled: bool
+_OFFICIAL_SOURCE_MARKETS = frozenset(
+    get_market_catalog().market_codes_with_capability("official_universe")
+)
 
 
 class OfficialMarketUniverseSourceService:
@@ -216,30 +203,41 @@ class OfficialMarketUniverseSourceService:
         self._kr_provider = kr_provider
         self._cn_provider = cn_provider
         self._market_calendar = market_calendar
+        self._asx_source = ASXOfficialUniverseSource(
+            http_get=lambda *args, **kwargs: self._http_get(*args, **kwargs)
+        )
 
     def fetch_market_snapshot(self, market: str) -> OfficialMarketUniverseSnapshot:
         normalized_market = str(market or "").strip().upper()
-        if normalized_market == "HK":
-            return self.fetch_hk_snapshot()
-        if normalized_market == "IN":
-            return self.fetch_in_snapshot()
-        if normalized_market == "JP":
-            return self.fetch_jp_snapshot()
-        if normalized_market == "KR":
-            return self.fetch_kr_snapshot()
-        if normalized_market == "TW":
-            return self.fetch_tw_snapshot()
-        if normalized_market == "CN":
-            return self.fetch_cn_snapshot()
-        if normalized_market == "CA":
-            return self.fetch_ca_snapshot()
-        if normalized_market == "DE":
-            return self.fetch_de_snapshot()
-        if normalized_market == "SG":
-            return self.fetch_sg_snapshot()
-        if normalized_market == "MY":
-            return self.fetch_my_snapshot()
+        fetchers = self._snapshot_fetchers()
+        fetcher = fetchers.get(normalized_market)
+        if fetcher is not None:
+            return fetcher()
         raise ValueError(f"Official universe refresh is unsupported for market {market!r}")
+
+    def _snapshot_fetchers(self) -> dict[str, Any]:
+        fetchers = {
+            "HK": self.fetch_hk_snapshot,
+            "IN": self.fetch_in_snapshot,
+            "JP": self.fetch_jp_snapshot,
+            "KR": self.fetch_kr_snapshot,
+            "TW": self.fetch_tw_snapshot,
+            "CN": self.fetch_cn_snapshot,
+            "CA": self.fetch_ca_snapshot,
+            "DE": self.fetch_de_snapshot,
+            "SG": self.fetch_sg_snapshot,
+            "MY": self.fetch_my_snapshot,
+            "AU": self._asx_source.fetch_snapshot,
+        }
+        fetcher_markets = frozenset(fetchers)
+        if fetcher_markets != _OFFICIAL_SOURCE_MARKETS:
+            missing = sorted(_OFFICIAL_SOURCE_MARKETS - fetcher_markets)
+            extra = sorted(fetcher_markets - _OFFICIAL_SOURCE_MARKETS)
+            raise RuntimeError(
+                "Official universe fetch dispatch must match Market Catalog "
+                f"official_universe capability; missing={missing}, extra={extra}"
+            )
+        return fetchers
 
     def fetch_hk_snapshot(self) -> OfficialMarketUniverseSnapshot:
         fetched = self._http_get(settings.hk_universe_source_url)

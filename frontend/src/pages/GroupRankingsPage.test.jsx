@@ -18,7 +18,23 @@ const runtimeState = {
   uiSnapshots: { groups: false },
   primaryMarket: 'HK',
   enabledMarkets: ['HK', 'US'],
-  supportedMarkets: ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'MY'],
+  supportedMarkets: ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'],
+  marketCatalog: {
+    markets: [
+      { code: 'US', label: 'United States', capabilities: { group_rankings: true } },
+      { code: 'HK', label: 'Hong Kong', capabilities: { group_rankings: true } },
+      { code: 'IN', label: 'India', capabilities: { group_rankings: true } },
+      { code: 'JP', label: 'Japan', capabilities: { group_rankings: true } },
+      { code: 'KR', label: 'South Korea', capabilities: { group_rankings: true } },
+      { code: 'TW', label: 'Taiwan', capabilities: { group_rankings: true } },
+      { code: 'CN', label: 'China A-shares', capabilities: { group_rankings: true } },
+      { code: 'CA', label: 'Canada', capabilities: { group_rankings: true } },
+      { code: 'DE', label: 'Germany', capabilities: { group_rankings: false } },
+      { code: 'SG', label: 'Singapore', capabilities: { group_rankings: false } },
+      { code: 'AU', label: 'Australia', capabilities: { group_rankings: false } },
+      { code: 'MY', label: 'Malaysia', capabilities: { group_rankings: false } },
+    ],
+  },
 };
 
 vi.mock('../api/groups', () => ({
@@ -74,7 +90,7 @@ describe('GroupRankingsPage', () => {
     runtimeState.uiSnapshots = { groups: false };
     runtimeState.primaryMarket = 'HK';
     runtimeState.enabledMarkets = ['HK', 'US'];
-    runtimeState.supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'MY'];
+    runtimeState.supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'];
     getGroupsBootstrap.mockReset();
     getCurrentRankings.mockReset();
     getRankMovers.mockReset();
@@ -157,6 +173,20 @@ describe('GroupRankingsPage', () => {
       expect(getCurrentRankings).toHaveBeenCalledWith(197, 'US');
     });
     expect(await screen.findByText('US Internet Services')).toBeInTheDocument();
+  });
+
+  it('does not request unsupported Australia group rankings when AU is enabled', async () => {
+    runtimeState.primaryMarket = 'AU';
+    runtimeState.enabledMarkets = ['AU', 'US'];
+
+    renderWithProviders(<GroupRankingsPage />);
+
+    await waitFor(() => {
+      expect(getCurrentRankings).toHaveBeenCalledWith(197, 'US');
+    });
+    expect(getCurrentRankings).not.toHaveBeenCalledWith(197, 'AU');
+    expect(screen.getByRole('button', { name: 'US' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'AU' })).not.toBeInTheDocument();
   });
 
   it('loads batch price history when the Charts tab is opened in the group modal', async () => {

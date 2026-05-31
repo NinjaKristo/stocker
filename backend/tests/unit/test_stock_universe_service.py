@@ -19,6 +19,7 @@ from app.models.stock_universe import (
 )
 from app.models.stock import StockIndustry
 from app.models.ticker_validation import TickerValidationLog
+from app.services.au_universe_ingestion_adapter import au_universe_ingestion_adapter
 from app.services.stock_universe_service import StockUniverseService
 
 stock_universe_service = StockUniverseService()
@@ -99,6 +100,7 @@ def _make_session():
 @pytest.mark.parametrize(
     ("market", "method_name"),
     [
+        ("AU", "ingest_au_snapshot_rows"),
         ("HK", "ingest_hk_snapshot_rows"),
         ("JP", "ingest_jp_snapshot_rows"),
         ("KR", "ingest_kr_snapshot_rows"),
@@ -147,6 +149,16 @@ def test_official_market_ingest_methods_delegate_to_shared_pipeline(
     assert ingestion_context.row_source == f"{market.lower()}_ingest"
     assert ingestion_context.reconciliation_policy.name == f"{market.lower()}_market_default"
     db.close()
+
+
+def test_stock_universe_service_wires_au_canonicalizer_in_shared_pipeline():
+    service = StockUniverseService()
+
+    assert service._au_ingestion is au_universe_ingestion_adapter
+    assert (
+        service._universe_ingestion_pipeline._canonicalizers["AU"]
+        is au_universe_ingestion_adapter
+    )
 
 
 def test_in_ingest_delegates_filtered_result_to_shared_pipeline():
@@ -358,6 +370,48 @@ def test_get_active_symbols_market_filter_falls_back_to_exchange_when_market_bla
     symbols = stock_universe_service.get_active_symbols(db, market="US")
 
     assert symbols == ["AAPL", "IBM"]
+    db.close()
+
+
+def test_get_active_symbols_market_filter_falls_back_to_catalog_exchange_for_au():
+    TestingSessionLocal = _make_session()
+    db = TestingSessionLocal()
+    db.add_all(
+        [
+            StockUniverse(
+                symbol="BHP.AX",
+                exchange="XASX",
+                market="",
+                market_cap=1000,
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="Present in ASX universe sync",
+            ),
+            StockUniverse(
+                symbol="CBA.AX",
+                exchange="ASX",
+                market="",
+                market_cap=900,
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="Present in ASX universe sync",
+            ),
+            StockUniverse(
+                symbol="0700.HK",
+                exchange="XHKG",
+                market="",
+                market_cap=800,
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="Present in HKEX universe sync",
+            ),
+        ]
+    )
+    db.commit()
+
+    symbols = stock_universe_service.get_active_symbols(db, market="AU")
+
+    assert symbols == ["BHP.AX", "CBA.AX"]
     db.close()
 
 
@@ -2149,6 +2203,7 @@ def test_get_market_audit_reports_by_market_counts_freshness_and_diff_summary(mo
     jp = audit["by_market"]["JP"]
     tw = audit["by_market"]["TW"]
     us = audit["by_market"]["US"]
+    au = audit["by_market"]["AU"]
 
     assert hk["counts"]["total"] == 2
     assert hk["counts"]["active"] == 1
@@ -2163,6 +2218,8 @@ def test_get_market_audit_reports_by_market_counts_freshness_and_diff_summary(mo
     assert tw["latest_snapshot"]["safety"]["quarantined"] is True
     assert us["snapshot_supported"] is False
     assert us["latest_snapshot"] is None
+    assert au["snapshot_supported"] is True
+    assert au["latest_snapshot"] is None
     assert audit["checks"]["stale_after_hours"] == 1
     assert set(audit["checks"]["stale_markets"]) == {"HK", "IN", "JP"}
     assert audit["checks"]["missing_snapshot_markets"] == ["IN", "JP"]

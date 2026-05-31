@@ -33,6 +33,7 @@ from ..models.stock import StockIndustry
 from ..models.ticker_validation import TickerValidationLog
 from ..schemas.universe import IndexName
 from ..config import settings
+from ..domain.markets.catalog import get_market_catalog
 from ..domain.markets.mic_aliases import mic_alias_registry
 from ..domain.universe.ingestion import (
     CanonicalUniverseIngestionResult,
@@ -43,6 +44,7 @@ from ..domain.universe.ingestion import (
     UniverseIngestionSideEffects,
     UniverseReconciliationPolicy,
 )
+from .au_universe_ingestion_adapter import au_universe_ingestion_adapter
 from .ca_universe_ingestion_adapter import ca_universe_ingestion_adapter
 from .cn_universe_ingestion_adapter import cn_universe_ingestion_adapter
 from .de_universe_ingestion_adapter import de_universe_ingestion_adapter
@@ -63,17 +65,10 @@ from .universe_ingestion_pipeline import (
 
 logger = logging.getLogger(__name__)
 
+_MARKET_CATALOG = get_market_catalog()
 MARKET_EXCHANGE_FALLBACKS: dict[str, tuple[str, ...]] = {
-    "US": ("NYSE", "NASDAQ", "AMEX"),
-    "HK": ("HKEX", "SEHK", "XHKG"),
-    "IN": ("NSE", "XNSE", "BSE", "XBOM"),
-    "JP": ("TSE", "JPX", "XTKS"),
-    "KR": ("KOSPI", "KOSDAQ", "XKRX"),
-    "TW": ("TWSE", "TPEX", "XTAI"),
-    "CN": ("SSE", "SZSE", "BJSE", "XSHG"),
-    "CA": ("TSX", "TSXV", "XTSE", "XTNX"),
-    "SG": ("SGX", "SES", "XSES"),
-    "MY": ("KLSE", "MYX", "XKLS", "BURSA"),
+    code: _MARKET_CATALOG.get(code).exchanges
+    for code in _MARKET_CATALOG.supported_market_codes()
 }
 KR_ACTIVE_UNIVERSE_MIN_COUNT = 2526
 CN_ACTIVE_UNIVERSE_MIN_COUNT = 5217
@@ -89,6 +84,7 @@ class StockUniverseService:
     def __init__(self):
         """Initialize stock universe service."""
         self._security_master = security_master_resolver
+        self._au_ingestion = au_universe_ingestion_adapter
         self._ca_ingestion = ca_universe_ingestion_adapter
         self._cn_ingestion = cn_universe_ingestion_adapter
         self._de_ingestion = de_universe_ingestion_adapter
@@ -102,6 +98,7 @@ class StockUniverseService:
         self._universe_ingestion_pipeline = UniverseIngestionPipeline(
             canonicalizers={
                 "US": self._finviz_ingestion,
+                "AU": self._au_ingestion,
                 "HK": FlatUniverseCanonicalizerAdapter(self._hk_ingestion),
                 "JP": FlatUniverseCanonicalizerAdapter(self._jp_ingestion),
                 "KR": FlatUniverseCanonicalizerAdapter(self._kr_ingestion),
@@ -1531,6 +1528,29 @@ class StockUniverseService:
             ),
         )
 
+    def ingest_au_snapshot_rows(
+        self,
+        db: Session,
+        *,
+        rows: Iterable[dict[str, Any]],
+        source_name: str,
+        snapshot_id: str,
+        snapshot_as_of: str | None = None,
+        source_metadata: Optional[dict[str, Any]] = None,
+        strict: bool = True,
+    ) -> Dict[str, Any]:
+        """Ingest AU rows with deterministic canonicalization and lineage metadata."""
+        return self._ingest_snapshot_rows_via_pipeline(
+            db,
+            market="AU",
+            rows=rows,
+            source_name=source_name,
+            snapshot_id=snapshot_id,
+            snapshot_as_of=snapshot_as_of,
+            source_metadata=source_metadata,
+            strict=strict,
+        )
+
     @staticmethod
     def _parse_hk_csv_rows(csv_content: str) -> list[dict[str, Any]]:
         """Parse HK ingestion CSV into normalized lowercase-key row dicts."""
@@ -2760,7 +2780,7 @@ class StockUniverseService:
 
         The payload is designed for ops visibility and launch-gate checks:
         - counts by market + normalized lifecycle status
-        - latest reconciliation snapshot age/diff summary (HK/JP/TW)
+        - latest reconciliation snapshot age/diff summary for official universe markets
         - stale/missing/quarantine check lists
         """
         now = datetime.utcnow()
@@ -2777,7 +2797,9 @@ class StockUniverseService:
             1,
         )
         stale_after_seconds = stale_after_hours * 3600
-        reconciliation_markets = {"HK", "IN", "JP", "KR", "TW", "CN", "CA", "DE", "SG", "MY"}
+        reconciliation_markets = set(
+            _MARKET_CATALOG.market_codes_with_capability("official_universe")
+        )
 
         by_market: Dict[str, Dict[str, Any]] = {
             market: {
@@ -2787,7 +2809,7 @@ class StockUniverseService:
                 "latest_seen_in_source_at": None,
                 "latest_snapshot": None,
             }
-            for market in ("US", "HK", "IN", "JP", "KR", "TW", "CN", "CA", "DE", "SG", "MY")
+            for market in _MARKET_CATALOG.supported_market_codes()
         }
 
         universe_rows = db.query(

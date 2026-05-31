@@ -34,6 +34,10 @@ import { getPriceHistory } from '../api/stocks';
 import BreadthChart from '../components/Charts/BreadthChart';
 import { format } from 'date-fns';
 import { useRuntime } from '../contexts/RuntimeContext';
+import {
+  marketOptionsForCapability,
+  normalizeMarketCode,
+} from '../utils/marketCapabilities';
 
 // Helper function to calculate date range based on time selection
 const getDateRange = (range) => {
@@ -92,9 +96,11 @@ const MARKET_LABELS = {
   KR: 'South Korea',
   TW: 'Taiwan',
   CN: 'China A-shares',
-  SG: 'Singapore',
-  MY: 'Malaysia',
   CA: 'Canada',
+  DE: 'Germany',
+  SG: 'Singapore',
+  AU: 'Australia',
+  MY: 'Malaysia',
 };
 
 const MARKET_LIVE_BENCHMARK_SYMBOLS = {
@@ -105,13 +111,17 @@ const MARKET_LIVE_BENCHMARK_SYMBOLS = {
   KR: '069500.KS',
   TW: '0050.TW',
   CN: '000300.SS',
-  SG: 'ES3.SI',
-  MY: '^KLSE',
   CA: 'XIU.TO',
+  DE: '^GDAXI',
+  SG: 'ES3.SI',
+  AU: 'IOZ.AX',
+  MY: '^KLSE',
 };
 
+const BREADTH_MARKET_FALLBACKS = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE'];
+
 function normalizeMarket(market) {
-  const normalized = String(market || 'US').trim().toUpperCase();
+  const normalized = normalizeMarketCode(market || 'US');
   return MARKET_LABELS[normalized] ? normalized : 'US';
 }
 
@@ -121,26 +131,28 @@ function BreadthPage() {
     uiSnapshots,
     primaryMarket = 'US',
     enabledMarkets = ['US'],
-    supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'MY'],
+    supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'],
+    marketCatalog,
   } = useRuntime();
   const queryClient = useQueryClient();
+  const marketOptions = useMemo(() => marketOptionsForCapability({
+    marketCatalog,
+    capability: 'breadth',
+    fallbackCodes: BREADTH_MARKET_FALLBACKS,
+    enabledMarkets,
+    supportedMarkets,
+  }), [enabledMarkets, marketCatalog, supportedMarkets]);
   const [selectedTab, setSelectedTab] = useState(0);
   const [chartTimeRange, setChartTimeRange] = useState('1M');
   const [bootstrapSettled, setBootstrapSettled] = useState(false);
-  const [selectedMarket, setSelectedMarket] = useState(() => normalizeMarket(primaryMarket));
+  const [selectedMarket, setSelectedMarket] = useState(() => {
+    const normalizedPrimary = normalizeMarket(primaryMarket);
+    return marketOptions.includes(normalizedPrimary)
+      ? normalizedPrimary
+      : (marketOptions[0] || 'US');
+  });
   const userSelectedMarketRef = useRef(false);
   const previousPrimaryMarketRef = useRef(normalizeMarket(primaryMarket));
-  const marketOptions = useMemo(() => {
-    const enabled = (enabledMarkets || [])
-      .map(normalizeMarket)
-      .filter((market, index, markets) => markets.indexOf(market) === index);
-    if (enabled.length > 0) {
-      return enabled;
-    }
-    return (supportedMarkets || ['US'])
-      .map(normalizeMarket)
-      .filter((market, index, markets) => markets.indexOf(market) === index);
-  }, [enabledMarkets, supportedMarkets]);
   useEffect(() => {
     if (marketOptions.length === 0) {
       return;

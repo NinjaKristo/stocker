@@ -12,7 +12,23 @@ const runtimeState = {
   uiSnapshots: { breadth: false },
   primaryMarket: 'HK',
   enabledMarkets: ['US', 'HK'],
-  supportedMarkets: ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'MY'],
+  supportedMarkets: ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'],
+  marketCatalog: {
+    markets: [
+      { code: 'US', label: 'United States', capabilities: { breadth: true } },
+      { code: 'HK', label: 'Hong Kong', capabilities: { breadth: true } },
+      { code: 'IN', label: 'India', capabilities: { breadth: true } },
+      { code: 'JP', label: 'Japan', capabilities: { breadth: true } },
+      { code: 'KR', label: 'South Korea', capabilities: { breadth: true } },
+      { code: 'TW', label: 'Taiwan', capabilities: { breadth: true } },
+      { code: 'CN', label: 'China A-shares', capabilities: { breadth: true } },
+      { code: 'CA', label: 'Canada', capabilities: { breadth: true } },
+      { code: 'DE', label: 'Germany', capabilities: { breadth: true } },
+      { code: 'SG', label: 'Singapore', capabilities: { breadth: false } },
+      { code: 'AU', label: 'Australia', capabilities: { breadth: false } },
+      { code: 'MY', label: 'Malaysia', capabilities: { breadth: false } },
+    ],
+  },
 };
 
 vi.mock('../contexts/RuntimeContext', () => ({
@@ -65,7 +81,7 @@ beforeEach(() => {
   runtimeState.uiSnapshots = { breadth: false };
   runtimeState.primaryMarket = 'HK';
   runtimeState.enabledMarkets = ['US', 'HK'];
-  runtimeState.supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'MY'];
+  runtimeState.supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'];
 
   breadthApi.getCurrentBreadth.mockImplementation((market = 'US') => Promise.resolve(breadthRow(market)));
   breadthApi.getHistoricalBreadth.mockImplementation((startDate, endDate, limit, market = 'US') => (
@@ -109,6 +125,23 @@ describe('BreadthPage', () => {
       expect(stocksApi.getPriceHistory).toHaveBeenCalledWith('069500.KS', '1mo');
     });
     expect(screen.getByRole('combobox', { name: /market/i })).toHaveTextContent('South Korea');
+  });
+
+  it('does not request unsupported Australia breadth when AU is enabled', async () => {
+    runtimeState.primaryMarket = 'AU';
+    runtimeState.enabledMarkets = ['AU', 'US'];
+
+    renderWithProviders(<BreadthPage />);
+
+    expect(await screen.findByText('Latest Breadth Data')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(breadthApi.getCurrentBreadth).toHaveBeenCalledWith('US');
+      expect(breadthApi.getBreadthSummary).toHaveBeenCalledWith('US');
+      expect(stocksApi.getPriceHistory).toHaveBeenCalledWith('SPY', '1mo');
+    });
+    expect(breadthApi.getCurrentBreadth).not.toHaveBeenCalledWith('AU');
+    expect(screen.getByRole('combobox', { name: /market/i })).toHaveTextContent('United States');
   });
 
   it('resyncs the default market when runtime primary market data loads late', async () => {

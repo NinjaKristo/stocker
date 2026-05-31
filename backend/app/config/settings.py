@@ -236,6 +236,13 @@ class Settings(BaseSettings):
     # under a 100-page ceiling. The cap exists so a runaway ``totalPages``
     # value in a malformed response cannot trigger an unbounded fetch loop.
     my_universe_max_pages: int = 100
+    # ASX public listed-company CSV. Live fetch is enabled by default because ASX
+    # publishes a stable CSV link from its official site; the repo CSV is fallback.
+    au_universe_source_url: str = "https://www.asx.com.au/asx/research/ASXListedCompanies.csv"
+    au_universe_fallback_csv_path: str = str(
+        _PROJECT_ROOT / "data" / "au_asx_listed_companies.csv"
+    )
+    au_live_min_universe_size: int = 1500
     ibd_industry_csv_path: str = str(_PROJECT_ROOT / "data" / "IBD_industry_group.csv")
 
     # Per-market rate budget overrides. Each value is in requests-per-second
@@ -252,6 +259,7 @@ class Settings(BaseSettings):
     yfinance_rate_limit_cn: float | None = None
     yfinance_rate_limit_sg: float | None = None
     yfinance_rate_limit_my: float | None = None
+    yfinance_rate_limit_au: float | None = None
     finviz_rate_limit_us: float | None = None
     finviz_rate_limit_hk: float | None = None
     finviz_rate_limit_in: float | None = None
@@ -261,6 +269,7 @@ class Settings(BaseSettings):
     finviz_rate_limit_cn: float | None = None
     finviz_rate_limit_sg: float | None = None
     finviz_rate_limit_my: float | None = None
+    finviz_rate_limit_au: float | None = None
 
     # Per-market batch sizes for yfinance bulk downloads. Defaults ship via
     # RateBudgetPolicy._DEFAULT_BATCH_SIZE and may be overridden per market.
@@ -273,6 +282,7 @@ class Settings(BaseSettings):
     yfinance_batch_size_cn: int | None = None
     yfinance_batch_size_sg: int | None = None
     yfinance_batch_size_my: int | None = None
+    yfinance_batch_size_au: int | None = None
 
     # Per-market batch interval overrides for the ``yfinance:batch`` provider key.
     # Values are in requests-per-second for that market specifically; the
@@ -289,6 +299,7 @@ class Settings(BaseSettings):
     yfinance_batch_rate_limit_cn: float | None = None
     yfinance_batch_rate_limit_sg: float | None = None
     yfinance_batch_rate_limit_my: float | None = None
+    yfinance_batch_rate_limit_au: float | None = None
 
     # Per-market backoff cap (seconds) for consecutive 429-driven backoffs.
     # Defaults in RateBudgetPolicy._DEFAULT_BACKOFF.
@@ -301,6 +312,7 @@ class Settings(BaseSettings):
     yfinance_backoff_max_s_cn: int | None = None
     yfinance_backoff_max_s_sg: int | None = None
     yfinance_backoff_max_s_my: int | None = None
+    yfinance_backoff_max_s_au: int | None = None
 
     # Per-market parallel worker counts for finviz (which has no batch API,
     # so concurrency is the only knob). Defaults live in
@@ -316,6 +328,7 @@ class Settings(BaseSettings):
     finviz_workers_cn: int | None = None
     finviz_workers_sg: int | None = None
     finviz_workers_my: int | None = None
+    finviz_workers_au: int | None = None
 
     # Provider circuit breaker (services/provider_circuit_breaker.py).
     # Trips when N consecutive batches/calls hit transient 429-style errors;
@@ -426,6 +439,8 @@ class Settings(BaseSettings):
     # contending with two same-timezone exchanges at the same cron tick.
     cache_warm_hour_my: int = 5
     cache_warm_minute_my: int = 30
+    cache_warm_hour_au: int = 7
+    cache_warm_minute_au: int = 0
 
     # Enabled markets — subset of SUPPORTED_MARKETS. Lets ops disable a market
     # entirely (beat schedule skips it; its worker can be stopped).
@@ -483,6 +498,7 @@ class Settings(BaseSettings):
     provider_snapshot_min_active_coverage_ca: float = 0.70
     provider_snapshot_min_active_coverage_de: float = 0.70
     provider_snapshot_min_active_coverage_sg: float = 0.70
+    provider_snapshot_min_active_coverage_au: float = 0.70
     provider_snapshot_min_active_coverage_my: float = 0.70
     provider_snapshot_max_missing_ratio_us: float = 0.005
     provider_snapshot_max_missing_ratio_hk: float = 0.30
@@ -494,6 +510,7 @@ class Settings(BaseSettings):
     provider_snapshot_max_missing_ratio_ca: float = 0.30
     provider_snapshot_max_missing_ratio_de: float = 0.30
     provider_snapshot_max_missing_ratio_sg: float = 0.30
+    provider_snapshot_max_missing_ratio_au: float = 0.30
     provider_snapshot_max_missing_ratio_my: float = 0.30
     market_data_source_mode: str = "github_first"  # github_first | live_only
     github_data_repository: str = "xang1234/stock-screener"
@@ -533,7 +550,7 @@ class Settings(BaseSettings):
         'cache_warm_hour_us', 'cache_warm_hour_hk', 'cache_warm_hour_in',
         'cache_warm_hour_jp', 'cache_warm_hour_kr', 'cache_warm_hour_tw',
         'cache_warm_hour_cn', 'cache_warm_hour_ca', 'cache_warm_hour_de',
-        'cache_warm_hour_sg', 'cache_warm_hour_my'
+        'cache_warm_hour_sg', 'cache_warm_hour_my', 'cache_warm_hour_au'
     )
     @classmethod
     def validate_per_market_hour(cls, v: int) -> int:
@@ -545,7 +562,7 @@ class Settings(BaseSettings):
         'cache_warm_minute_us', 'cache_warm_minute_hk', 'cache_warm_minute_in',
         'cache_warm_minute_jp', 'cache_warm_minute_kr', 'cache_warm_minute_tw',
         'cache_warm_minute_cn', 'cache_warm_minute_ca', 'cache_warm_minute_de',
-        'cache_warm_minute_sg', 'cache_warm_minute_my'
+        'cache_warm_minute_sg', 'cache_warm_minute_my', 'cache_warm_minute_au'
     )
     @classmethod
     def validate_per_market_minute(cls, v: int) -> int:
@@ -601,6 +618,7 @@ class Settings(BaseSettings):
         'provider_snapshot_min_active_coverage_ca',
         'provider_snapshot_min_active_coverage_de',
         'provider_snapshot_min_active_coverage_sg',
+        'provider_snapshot_min_active_coverage_au',
         'provider_snapshot_min_active_coverage_my',
         'provider_snapshot_max_missing_ratio_us',
         'provider_snapshot_max_missing_ratio_hk',
@@ -612,6 +630,7 @@ class Settings(BaseSettings):
         'provider_snapshot_max_missing_ratio_ca',
         'provider_snapshot_max_missing_ratio_de',
         'provider_snapshot_max_missing_ratio_sg',
+        'provider_snapshot_max_missing_ratio_au',
         'provider_snapshot_max_missing_ratio_my',
     )
     @classmethod
@@ -749,6 +768,7 @@ class Settings(BaseSettings):
             "DE": (self.cache_warm_hour_de, self.cache_warm_minute_de),
             "SG": (self.cache_warm_hour_sg, self.cache_warm_minute_sg),
             "MY": (self.cache_warm_hour_my, self.cache_warm_minute_my),
+            "AU": (self.cache_warm_hour_au, self.cache_warm_minute_au),
         }
         if m not in mapping:
             raise ValueError(f"No cache warm schedule for market {market!r}")

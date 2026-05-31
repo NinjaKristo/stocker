@@ -367,3 +367,10 @@ def test_official_snapshot_dispatch_registry_matches_allowlisted_markets():
     import app.tasks.universe_tasks as module
 
     assert set(module._OFFICIAL_UNIVERSE_INGEST_METHODS) == module._OFFICIAL_SOURCE_MARKETS
+
+
+def test_official_snapshot_dispatch_registry_includes_au():
+    import app.tasks.universe_tasks as module
+
+    assert "AU" in module._OFFICIAL_SOURCE_MARKETS
+    assert module._OFFICIAL_UNIVERSE_INGEST_METHODS["AU"] == "ingest_au_snapshot_rows"

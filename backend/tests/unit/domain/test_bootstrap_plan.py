@@ -40,6 +40,20 @@ def test_non_us_bootstrap_plan_uses_official_universe_without_industry_seed() ->
     }
 
 
+def test_au_bootstrap_plan_refreshes_universe_before_prices_and_fundamentals() -> None:
+    plan = build_bootstrap_plan(primary_market="AU", enabled_markets=["AU"])
+    au_plan = plan.market_plans[0]
+
+    assert au_plan.market == "AU"
+    assert [stage.key for stage in au_plan.stages[:3]] == [
+        "universe",
+        "prices",
+        "fundamentals",
+    ]
+    assert au_plan.stages[0].task_name == "refresh_official_market_universe"
+    assert au_plan.stages[0].kwargs["market"] == "AU"
+
+
 def test_bootstrap_plan_deduplicates_primary_and_enabled_markets_in_order() -> None:
     plan = build_bootstrap_plan(primary_market="HK", enabled_markets=["US", "HK", "US"])
 
