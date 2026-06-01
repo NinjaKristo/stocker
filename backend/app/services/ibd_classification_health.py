@@ -70,3 +70,42 @@ def diff_classifications(prev_rows: Iterable[dict], new_rows: Iterable[dict]) ->
             {"symbol": s, "prev": prev[s], "new": new[s]} for s in changed[:50]
         ],
     }
+
+
+def build_health_report(
+    *,
+    payload: dict[str, Any],
+    prev_payload: dict[str, Any] | None,
+    embedding_model: str | None,
+) -> dict:
+    """Assemble the per-market health report from a fresh payload (+ prior week)."""
+    rows = payload.get("classifications", [])
+    diff = None
+    if prev_payload is not None:
+        diff = diff_classifications(prev_payload.get("classifications", []), rows)
+        diff["prev_as_of_date"] = prev_payload.get("as_of_date")
+        diff["prev_source_revision"] = prev_payload.get("source_revision")
+    return {
+        "schema_version": HEALTH_REPORT_SCHEMA_VERSION,
+        "market": payload.get("market"),
+        "as_of_date": payload.get("as_of_date"),
+        "generated_at": payload.get("generated_at"),
+        "model_id": payload.get("model_id"),
+        "embedding_model": embedding_model,
+        "summary": payload.get("summary", {}),
+        "confidence_histogram": confidence_histogram(rows),
+        "diff": diff,
+    }
+
+
+def health_asset_name(market: str) -> str:
+    return f"ibd-classification-health-{market.lower()}.json"
+
+
+def write_health_report(path: Path, report: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def read_health_report(path: Path) -> dict:
+    return json.loads(Path(path).read_text(encoding="utf-8"))

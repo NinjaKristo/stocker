@@ -1,8 +1,13 @@
 """Unit tests for the IBD classification health report + gate (pure, no DB)."""
 from app.services.ibd_classification_health import (
+    HEALTH_REPORT_SCHEMA_VERSION,
     HISTOGRAM_BINS,
+    build_health_report,
     confidence_histogram,
     diff_classifications,
+    health_asset_name,
+    read_health_report,
+    write_health_report,
 )
 
 
@@ -53,3 +58,64 @@ def test_diff_classifications_empty_prev_is_zero_churn():
     assert diff["compared"] == 0
     assert diff["added"] == 1
     assert diff["churn_pct"] == 0.0
+
+
+def _payload(rows, *, as_of, summary):
+    return {
+        "market": "HK",
+        "as_of_date": as_of,
+        "generated_at": f"{as_of}T00:00:00Z",
+        "source_revision": f"ibd:{as_of}",
+        "model_id": "deepseek-chat",
+        "summary": summary,
+        "classifications": rows,
+    }
+
+
+def test_build_health_report_with_prev():
+    new = _payload(
+        [{"symbol": "A", "industry_group": "G1", "confidence": 0.9},
+         {"symbol": "B", "industry_group": "G9", "confidence": None}],
+        as_of="2026-06-02",
+        summary={"coverage_pct": 96.0, "by_source": {"embedding": 1, "llm": 1}},
+    )
+    prev = _payload(
+        [{"symbol": "A", "industry_group": "G1", "confidence": 0.9},
+         {"symbol": "B", "industry_group": "G2", "confidence": 0.7}],
+        as_of="2026-05-26",
+        summary={"coverage_pct": 95.0},
+    )
+
+    report = build_health_report(
+        payload=new, prev_payload=prev, embedding_model="all-MiniLM-L6-v2"
+    )
+
+    assert report["schema_version"] == HEALTH_REPORT_SCHEMA_VERSION
+    assert report["market"] == "HK"
+    assert report["embedding_model"] == "all-MiniLM-L6-v2"
+    assert report["summary"]["coverage_pct"] == 96.0
+    assert report["confidence_histogram"]["null"] == 1
+    assert report["diff"]["changed_group"] == 1          # B changed
+    assert report["diff"]["churn_pct"] == 50.0
+    assert report["diff"]["prev_as_of_date"] == "2026-05-26"
+    assert report["diff"]["prev_source_revision"] == "ibd:2026-05-26"
+
+
+def test_build_health_report_without_prev_has_null_diff():
+    new = _payload(
+        [{"symbol": "A", "industry_group": "G1", "confidence": 0.9}],
+        as_of="2026-06-02",
+        summary={"coverage_pct": 96.0},
+    )
+    report = build_health_report(payload=new, prev_payload=None, embedding_model="x")
+    assert report["diff"] is None
+
+
+def test_health_asset_name_and_roundtrip(tmp_path):
+    assert health_asset_name("SG") == "ibd-classification-health-sg.json"
+
+    report = {"schema_version": 1, "market": "SG", "summary": {"coverage_pct": 90.0}}
+    path = tmp_path / health_asset_name("SG")
+    write_health_report(path, report)
+    assert path.read_text().endswith("\n")
+    assert read_health_report(path) == report
