@@ -40,7 +40,10 @@ def confidence_histogram(rows: Iterable[dict]) -> dict[str, int]:
         if confidence >= 1.0:
             hist[HISTOGRAM_BINS[-1]] += 1
             continue
-        idx = int(confidence * 10)
+        # Nudge by a tiny epsilon before truncating so a float just shy of a
+        # tenth (e.g. an upstream-computed 0.6 stored as 0.5999999999999999)
+        # doesn't land one bucket low.
+        idx = int(confidence * 10 + 1e-9)
         idx = max(0, min(idx, 9))
         hist[HISTOGRAM_BINS[idx]] += 1
     return hist
@@ -135,7 +138,10 @@ def evaluate_gate(
         return GateResult(passed=True, mode=mode, breaches=[])
 
     breaches: list[str] = []
-    coverage = (report.get("summary") or {}).get("coverage_pct", 0.0)
+    # Coerce a missing/None/non-numeric coverage to 0.0 so the gate fails safe
+    # (a coverage breach) on a malformed report rather than raising TypeError.
+    coverage = (report.get("summary") or {}).get("coverage_pct")
+    coverage = coverage if isinstance(coverage, (int, float)) else 0.0
     if coverage < min_coverage_pct:
         breaches.append(f"coverage {coverage}% < min {min_coverage_pct}%")
 

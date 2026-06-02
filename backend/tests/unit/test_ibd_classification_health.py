@@ -204,3 +204,25 @@ def test_gate_cli_ok_returns_0(tmp_path, capsys):
     ])
     assert rc == 0
     assert "gate: OK" in capsys.readouterr().out
+
+
+def test_confidence_histogram_exact_tenth_boundaries():
+    # Each exact tenth must land in the bin whose lower edge it equals, robust to
+    # float representation error from arbitrary upstream confidence sources.
+    rows = [{"confidence": c} for c in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)]
+    hist = confidence_histogram(rows)
+    for n in range(1, 10):
+        assert hist[HISTOGRAM_BINS[n]] == 1, (n, HISTOGRAM_BINS[n], hist)
+    assert hist["[0.0,0.1)"] == 0
+    assert hist["null"] == 0
+
+
+def test_gate_none_coverage_is_breach_not_crash():
+    # A malformed report with coverage_pct=None must fail safe (coverage breach),
+    # not raise TypeError inside the gate.
+    res = evaluate_gate(
+        {"summary": {"coverage_pct": None}, "diff": None},
+        max_churn_pct=25, min_coverage_pct=50, mode="enforce",
+    )
+    assert not res.passed
+    assert any("coverage" in b for b in res.breaches)
