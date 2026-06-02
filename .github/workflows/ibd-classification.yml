@@ -34,6 +34,15 @@ on:
           - SG
           - AU
           - MY
+      gate_mode:
+        description: "Regression gate mode (off=no checks, warn=log only, enforce=block publish on breach)."
+        required: false
+        type: choice
+        default: warn
+        options:
+          - warn
+          - enforce
+          - off
   schedule:
     # Fallback ~3h after the Saturday weekly-reference cron (08:10 ET) in case
     # the workflow_run trigger is missed.
@@ -258,13 +267,73 @@ jobs:
           cd backend
           python -m app.scripts.load_ibd_industry_groups
 
+      - name: Download previous IBD bundle (for churn diff)
+        id: prev
+        if: ${{ steps.seed.outputs.seeded == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export MARKET_LOWER="$(echo "${{ matrix.market }}" | tr '[:upper:]' '[:lower:]')"
+          mkdir -p /tmp/ibd-prev
+          PREV_BUNDLE=""
+          if gh release download ibd-classification-data \
+            --pattern "ibd-classification-latest-${MARKET_LOWER}.json" \
+            --dir /tmp/ibd-prev >/dev/null 2>&1; then
+            PREV_ASSET="$(python - <<'PY'
+          import json, os
+          from pathlib import Path
+          market = os.environ["MARKET_LOWER"]
+          try:
+              manifest = json.loads(Path(f"/tmp/ibd-prev/ibd-classification-latest-{market}.json").read_text(encoding="utf-8"))
+              print(manifest.get("bundle_asset_name", ""))
+          except Exception:
+              print("")
+          PY
+            )"
+            if [ -n "$PREV_ASSET" ] && gh release download ibd-classification-data \
+              --pattern "$PREV_ASSET" --dir /tmp/ibd-prev >/dev/null 2>&1; then
+              PREV_BUNDLE="/tmp/ibd-prev/${PREV_ASSET}"
+            fi
+          fi
+          echo "prev_bundle=${PREV_BUNDLE}" >> "$GITHUB_OUTPUT"
+          echo "Previous bundle: ${PREV_BUNDLE:-<none>}"
+
       - name: Build IBD classification bundle
         if: ${{ steps.seed.outputs.seeded == 'true' }}
         run: |
           cd backend
+          PREV_ARG=""
+          if [ -n "${{ steps.prev.outputs.prev_bundle }}" ]; then
+            PREV_ARG="--prev-bundle ${{ steps.prev.outputs.prev_bundle }}"
+          fi
           python -m app.scripts.build_ibd_classification_bundle \
             --market "${{ matrix.market }}" \
-            --output-dir /tmp/ibd-classification
+            --output-dir /tmp/ibd-classification \
+            $PREV_ARG
+
+      - name: Upload IBD health report
+        if: ${{ steps.seed.outputs.seeded == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MARKET_LOWER="$(echo "${{ matrix.market }}" | tr '[:upper:]' '[:lower:]')"
+          HEALTH_PATH="/tmp/ibd-classification/ibd-classification-health-${MARKET_LOWER}.json"
+          if [ ! -f "$HEALTH_PATH" ]; then
+            echo "Missing IBD health report at $HEALTH_PATH" >&2
+            exit 1
+          fi
+          gh release upload ibd-classification-data "$HEALTH_PATH" --clobber
+
+      - name: Evaluate classification health gate
+        if: ${{ steps.seed.outputs.seeded == 'true' }}
+        run: |
+          cd backend
+          MARKET_LOWER="$(echo "${{ matrix.market }}" | tr '[:upper:]' '[:lower:]')"
+          python -m app.scripts.check_ibd_classification_gate \
+            --health "/tmp/ibd-classification/ibd-classification-health-${MARKET_LOWER}.json" \
+            --max-churn-pct "${{ vars.IBD_GATE_MAX_CHURN_PCT || '25' }}" \
+            --min-coverage-pct "${{ vars.IBD_GATE_MIN_COVERAGE_PCT || '50' }}" \
+            --mode "${{ github.event.inputs.gate_mode || vars.IBD_GATE_MODE || 'warn' }}"
 
       - name: Upload IBD classification assets
         if: ${{ steps.seed.outputs.seeded == 'true' }}
