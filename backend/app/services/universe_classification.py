@@ -24,10 +24,11 @@ _T = TypeVar("_T")
 
 
 def is_meaningful_classification(value: object) -> bool:
-    """True when ``value`` is a real sector/industry label (not blank/Other/Unknown).
+    """True when ``value`` is a real sector/industry label.
 
-    The ``bool(value)`` guard must stay first so ``None`` is rejected before the
-    string compare — ``str(None)`` is ``"None"`` (capital N), not in the set.
+    Blank/``None`` and the placeholder labels (``Other``/``Unknown``/``N/A``/``None``)
+    all read as not-meaningful; the membership test is case-insensitive. (``None``
+    is caught both by the falsy guard and by ``"none"`` being in the set.)
     """
     return bool(value) and str(value).strip().lower() not in _PLACEHOLDER_CLASSIFICATION
 

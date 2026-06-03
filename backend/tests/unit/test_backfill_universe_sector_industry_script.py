@@ -78,17 +78,22 @@ def test_dry_run_reports_without_persisting():
     assert (session.query(StockUniverse).filter_by(symbol="0700.HK").first().sector or "") == ""
 
 
-def test_tolerates_fetch_errors():
+def test_counts_errors_for_raises_and_none_returns():
+    # get_fundamentals returns None on failure (doesn't re-raise); both a raised
+    # exception AND a None return must count as errors, not silent "not filled".
     session = _session()
     _add(session, "0700.HK", "HK", "", "")
-    _add(session, "BAD.HK", "HK", "", "")
+    _add(session, "RAISE.HK", "HK", "", "")
+    _add(session, "NONE.HK", "HK", "", "")
 
     def flaky(symbol):
-        if symbol == "BAD.HK":
+        if symbol == "RAISE.HK":
             raise RuntimeError("provider down")
+        if symbol == "NONE.HK":
+            return None  # the common failure mode
         return _fetch(symbol)
 
     stats = backfill_universe(session, fetch_fundamentals=flaky)
-    assert stats["candidates"] == 2
+    assert stats["candidates"] == 3
     assert stats["filled"] == 1
-    assert stats["errors"] == 1
+    assert stats["errors"] == 2  # both RAISE.HK and NONE.HK

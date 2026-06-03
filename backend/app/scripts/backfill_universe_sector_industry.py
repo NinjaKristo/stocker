@@ -62,8 +62,12 @@ def backfill_universe(
     filled = errors = 0
     for i, row in enumerate(candidates, 1):
         try:
-            data = fetch_fundamentals(row.symbol) or {}
+            data = fetch_fundamentals(row.symbol)
         except Exception:  # noqa: BLE001 — one bad symbol must not abort the batch
+            data = None
+        # get_fundamentals logs and returns None on failure (it doesn't re-raise),
+        # so a None result is a fetch error, not "no data to fill".
+        if data is None:
             errors += 1
             continue
         if backfill_universe_classification(
