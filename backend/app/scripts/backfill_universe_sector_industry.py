@@ -20,17 +20,17 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.stock_universe import StockUniverse
 from app.scripts._runtime import prepare_runtime
-from app.services.fundamentals_cache_service import (
-    _backfill_universe_classification,
-    _is_meaningful_classification,
+from app.services.universe_classification import (
+    backfill_universe_classification,
+    is_meaningful_classification,
 )
 
 
 def _needs_backfill(row: StockUniverse) -> bool:
     """True when the row lacks a real sector OR industry."""
     return not (
-        _is_meaningful_classification(row.sector)
-        and _is_meaningful_classification(row.industry)
+        is_meaningful_classification(row.sector)
+        and is_meaningful_classification(row.industry)
     )
 
 
@@ -66,7 +66,9 @@ def backfill_universe(
         except Exception:  # noqa: BLE001 — one bad symbol must not abort the batch
             errors += 1
             continue
-        if _backfill_universe_classification(db, row.symbol, data):
+        if backfill_universe_classification(
+            db, row.symbol, sector=data.get("sector"), industry=data.get("industry")
+        ):
             filled += 1
         if progress and i % 200 == 0:
             progress({"scanned": i, "total": len(candidates), "filled": filled, "errors": errors})
