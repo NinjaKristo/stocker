@@ -520,10 +520,13 @@ class ProviderSnapshotService:
         db.add(run)
         db.flush()
 
-        # Dedup by canonical symbol before insert. Two universe rows can resolve to
-        # the same canonical symbol (e.g. a drifted TW .TWO/.TW pair); without this
-        # the (run_id, symbol) unique constraint would abort the entire market build.
-        # Last write wins; collisions are logged rather than silently dropped.
+        # Defense-in-depth for the (run_id, symbol) unique constraint: collapse any
+        # rows that share a symbol before insert, so a collision can never abort the
+        # whole market build. build_market_snapshot_row now trusts the already-unique
+        # StockUniverse.symbol, so the primary collision source (re-canonicalizing a
+        # drifted TW .TWO/.TW pair) is gone; this guards only the residual case where
+        # light normalization maps two stored symbols together. Mirrors the US path,
+        # which already dedups via a symbol-keyed dict. Last write wins; logged.
         deduped_by_symbol: Dict[str, Dict[str, Any]] = {}
         for row in rows:
             symbol = row["symbol"]
@@ -561,13 +564,12 @@ class ProviderSnapshotService:
         # clamp the persisted counts to the actual number of rows written — the run
         # metadata must never claim more symbols than exist in provider_snapshot_row.
         persisted_count = len(materialized_rows)
-        run.symbols_total = min(
-            int(coverage_stats.get("snapshot_symbols", persisted_count) or 0), persisted_count
-        )
-        run.symbols_published = min(
-            int(coverage_stats.get("covered_active_symbols", persisted_count) or 0),
-            persisted_count,
-        )
+
+        def _count(key: str) -> int:
+            return min(int(coverage_stats.get(key, persisted_count) or 0), persisted_count)
+
+        run.symbols_total = _count("snapshot_symbols")
+        run.symbols_published = _count("covered_active_symbols")
         run.coverage_stats_json = json.dumps(coverage_stats, sort_keys=True)
         run.parity_stats_json = json.dumps(parity_stats, sort_keys=True)
         run.warnings_json = json.dumps(all_warnings, sort_keys=True) if all_warnings else None
