@@ -413,11 +413,24 @@ def test_llm_tier_caches_and_caps_budget():
     c = StockContext("C", "SG", sector="Energy", industry="Oil")  # distinct key
 
     assert tier.choose(a, ["G1", "G2"]) == "G1"   # miss → one paid call
-    assert tier.choose(b, ["G2", "G1"]) == "G1"   # same sorted key → free cache hit
+    assert tier.choose(b, ["G1", "G2"]) == "G1"   # same ranked shortlist → free cache hit
     assert tier.choose(c, ["G3"]) is None         # budget spent → decline
     assert tier.calls == 1 and tier.cache_hits == 1
     assert tier.budget_exhausted is True
     assert tier.choose(b, ["G1", "G2"]) == "G1"   # cached → still served over budget
+
+
+def test_llm_tier_reordered_shortlist_is_a_distinct_prompt():
+    # The LLM prompt renders candidates in order, so a reordered shortlist is a
+    # different prompt and must NOT reuse the cached answer.
+    tb, calls = _tier_tiebreaker()  # returns shortlist[0]
+    tier = _LLMTier(tb, model_id="m", max_calls=5, deadline_seconds=None, clock=lambda: 0.0)
+    a = StockContext("A", "SG", sector="Fin", industry="Banks")
+
+    assert tier.choose(a, ["G1", "G2"]) == "G1"   # miss → call (top candidate G1)
+    assert tier.choose(a, ["G2", "G1"]) == "G2"   # reordered → separate call (top G2)
+    assert calls["n"] == 2
+    assert tier.cache_hits == 0
 
 
 def test_llm_tier_declines_past_deadline_but_serves_cache():

@@ -166,10 +166,12 @@ class _LLMTier:
     def choose(self, ctx: "StockContext", shortlist: list[str]) -> Optional[str]:
         if self._tiebreaker is None or not shortlist:
             return None
-        # Industry + (order-independent) shortlist key: same candidates for the same
-        # industry → one shared decision. The company name is the only discriminator
-        # dropped, and it rarely changes the IBD group.
-        key = (ctx.sub_industry, ctx.sector, ctx.industry, tuple(sorted(shortlist)))
+        # Industry + ranked-shortlist key: the LLM prompt renders candidates in this
+        # order, so a reordered shortlist is a different prompt and must not reuse a
+        # cached answer. Same-industry stocks almost always produce the same ranking,
+        # so this still collapses the common case. The company name is the only input
+        # dropped from the key, and it rarely changes the IBD group.
+        key = (ctx.sub_industry, ctx.sector, ctx.industry, tuple(shortlist))
         if key in self._cache:
             self.cache_hits += 1
             return self._cache[key]
