@@ -19,24 +19,24 @@ import {
 import { useStaticManifest, fetchStaticJson, resolveStaticMarketEntry } from '../dataClient';
 import { useStaticChartIndex } from '../chartClient';
 import PriceSparkline from '../../components/Scan/PriceSparkline';
-import RSSparkline from '../../components/Scan/RSSparkline';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import StaticChartViewerModal from '../StaticChartViewerModal';
 import RankChangeCell from '../../components/shared/RankChangeCell';
 import TickerCell from '../../components/common/TickerCell';
-import { getGroupRankColor } from '../../utils/colorUtils';
 import { formatLocalCurrency } from '../../utils/formatUtils';
 import { useStaticMarket } from '../StaticMarketContext';
 import { marketFlag } from '../marketFlags';
 import { MARKET_CAP_OPTIONS } from '../../features/scan/components/filterPanel/constants';
 import { applyScanFilterDefaults } from '../../features/scan/defaultFilters';
 import { filterStaticScanRows, sortStaticScanRows } from '../scanClient';
-import { resolveMarketCapDisplay } from '../../utils/marketCapUtils';
+import DailyScanRowsTable from '../components/DailyScanRowsTable';
+import { buildFiltersFromPreset } from '../hooks/usePresetScreens';
 
 const EMPTY_RESULTS = [];
 const DEFAULT_MIN_VOLUME = 100_000_000;
 const DEFAULT_TOP_RESULTS = 20;
+const LEADERS_SCREEN_ID = 'leaders_in_leading_groups';
 
 const formatNumber = (value, digits = 0) => {
   if (value == null) return '-';
@@ -59,7 +59,7 @@ function StaticHomePage() {
     enabled: Boolean(marketEntry.pages?.home?.path),
     staleTime: Infinity,
   });
-  const scanRowsQuery = useQuery({
+  const scanBundleQuery = useQuery({
     queryKey: ['staticHomeScanRows', marketEntry.pages?.scan?.path],
     queryFn: async () => {
       const scanManifest = await fetchStaticJson(marketEntry.pages.scan.path);
@@ -74,7 +74,10 @@ function StaticHomePage() {
           rowsBySymbol.set(row.symbol, row);
         });
       });
-      return Array.from(rowsBySymbol.values());
+      return {
+        rows: Array.from(rowsBySymbol.values()),
+        presetScreens: scanManifest.preset_screens || [],
+      };
     },
     enabled: Boolean(marketEntry.pages?.scan?.path),
     staleTime: Infinity,
@@ -84,6 +87,7 @@ function StaticHomePage() {
 
   const [chartModalOpen, setChartModalOpen] = useState(false);
   const [selectedChartSymbol, setSelectedChartSymbol] = useState(null);
+  const [modalNavigationSymbols, setModalNavigationSymbols] = useState([]);
   const [marketCapMin, setMarketCapMin] = useState('');
   const topGroups = homeQuery.data?.top_groups ?? EMPTY_RESULTS;
   const topCandidateFilters = useMemo(
@@ -93,23 +97,42 @@ function StaticHomePage() {
     }),
     [marketCapMin]
   );
+  const scanRows = scanBundleQuery.data?.rows ?? EMPTY_RESULTS;
   const topResults = useMemo(() => {
-    const allRows = scanRowsQuery.data ?? EMPTY_RESULTS;
     return sortStaticScanRows(
-      filterStaticScanRows(allRows, topCandidateFilters),
+      filterStaticScanRows(scanRows, topCandidateFilters),
       'composite_score',
       'desc'
     ).slice(0, DEFAULT_TOP_RESULTS);
-  }, [scanRowsQuery.data, topCandidateFilters]);
+  }, [scanRows, topCandidateFilters]);
+  const leadingGroupScreen = useMemo(
+    () => scanBundleQuery.data?.presetScreens?.find((screen) => screen.id === LEADERS_SCREEN_ID) ?? null,
+    [scanBundleQuery.data?.presetScreens]
+  );
+  const leadingGroupRows = useMemo(() => {
+    if (!leadingGroupScreen) {
+      return EMPTY_RESULTS;
+    }
+    return sortStaticScanRows(
+      filterStaticScanRows(scanRows, buildFiltersFromPreset(leadingGroupScreen)),
+      leadingGroupScreen.sort_by,
+      leadingGroupScreen.sort_order,
+      { prioritizeCompositeScanMode: false }
+    ).slice(0, DEFAULT_TOP_RESULTS);
+  }, [leadingGroupScreen, scanRows]);
 
   const chartEntries = useMemo(() => chartIndexQuery.data?.symbols || [], [chartIndexQuery.data]);
   const chartEnabledSymbols = useMemo(() => new Set(chartEntries.map((e) => e.symbol)), [chartEntries]);
-  const navigationSymbols = useMemo(
+  const topNavigationSymbols = useMemo(
     () => topResults.map((r) => r.symbol).filter((s) => chartEnabledSymbols.has(s)),
     [topResults, chartEnabledSymbols],
   );
+  const leadingGroupNavigationSymbols = useMemo(
+    () => leadingGroupRows.map((r) => r.symbol).filter((s) => chartEnabledSymbols.has(s)),
+    [leadingGroupRows, chartEnabledSymbols],
+  );
 
-  if (manifestQuery.isLoading || homeQuery.isLoading || scanRowsQuery.isLoading) {
+  if (manifestQuery.isLoading || homeQuery.isLoading || scanBundleQuery.isLoading) {
     return (
       <Box display="flex" justifyContent="center" py={8}>
         <CircularProgress />
@@ -117,7 +140,7 @@ function StaticHomePage() {
     );
   }
 
-  if (manifestQuery.isError || homeQuery.isError || scanRowsQuery.isError) {
+  if (manifestQuery.isError || homeQuery.isError || scanBundleQuery.isError) {
     return (
       <Alert severity="error">
         Failed to load the daily snapshot.
@@ -130,9 +153,10 @@ function StaticHomePage() {
   const marketDisplay = home?.market_display_name || marketEntry.display_name;
   const flag = marketFlag(marketEntry.market);
 
-  const handleRowClick = (symbol) => {
+  const handleRowClick = (symbol, navigationSymbols) => {
     if (chartEnabledSymbols.has(symbol)) {
       setSelectedChartSymbol(symbol);
+      setModalNavigationSymbols(navigationSymbols);
       setChartModalOpen(true);
     }
   };
@@ -234,25 +258,17 @@ function StaticHomePage() {
         })}
       </Grid>
 
-      <Paper elevation={0} sx={{ p: 1.5, mb: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 1,
-            flexWrap: 'wrap',
-            mb: 1,
-          }}
-        >
-          <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
-              Top Scan Candidates
-            </Typography>
-            <Typography variant="caption" color="text.disabled" sx={{ display: 'block', fontSize: '10px' }}>
-              Dollar volume &gt; $100M. Click a row for chart details.
-            </Typography>
-          </Box>
+      <DailyScanRowsTable
+        testId="top-scan-candidates-section"
+        title="Top Scan Candidates"
+        subtitle="Dollar volume > $100M. Click a row for chart details."
+        rows={topResults}
+        chartEnabledSymbols={chartEnabledSymbols}
+        navigationSymbols={topNavigationSymbols}
+        onOpenChart={handleRowClick}
+        emptyMessage="No scan candidates match the current filters."
+        showRating
+        action={(
           <TextField
             select
             size="small"
@@ -271,99 +287,22 @@ function StaticHomePage() {
               </MenuItem>
             ))}
           </TextField>
-        </Box>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell align="center">Symbol</TableCell>
-                <TableCell align="center">Score</TableCell>
-                <TableCell align="center">Price</TableCell>
-                <TableCell align="center">MCap</TableCell>
-                <TableCell align="center">Rating</TableCell>
-                <TableCell align="center">Price Trend (30d)</TableCell>
-                <TableCell align="center">RS Trend (30d)</TableCell>
-                <TableCell align="center">IBD Group</TableCell>
-                <TableCell align="center">Grp Rank</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {topResults.map((row) => (
-                <TableRow
-                  key={row.symbol}
-                  hover={chartEnabledSymbols.has(row.symbol)}
-                  tabIndex={chartEnabledSymbols.has(row.symbol) ? 0 : -1}
-                  onClick={() => handleRowClick(row.symbol)}
-                  onKeyDown={(event) => {
-                    if (!chartEnabledSymbols.has(row.symbol)) return;
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleRowClick(row.symbol);
-                    }
-                  }}
-                  sx={{ cursor: chartEnabledSymbols.has(row.symbol) ? 'pointer' : 'default' }}
-                >
-                  <TableCell align="center">
-                    <TickerCell symbol={row.symbol} companyName={row.company_name} align="center" />
-                  </TableCell>
-                  <TableCell align="center">{formatNumber(row.composite_score, 1)}</TableCell>
-                  <TableCell align="center">{formatLocalCurrency(row.current_price, row.currency)}</TableCell>
-                  <TableCell align="center">
-                    {resolveMarketCapDisplay(row, null, { preferUsd: true }).formattedValue}
-                  </TableCell>
-                  <TableCell align="center">{row.rating}</TableCell>
-                  <TableCell align="center">
-                    {row.price_sparkline_data ? (
-                      <Box display="flex" justifyContent="center">
-                        <PriceSparkline
-                          data={row.price_sparkline_data}
-                          trend={row.price_trend}
-                          change1d={row.price_change_1d}
-                          industry={row.ibd_industry_group}
-                          width={137}
-                          height={28}
-                          sparklineWidth={86}
-                        />
-                      </Box>
-                    ) : '-'}
-                  </TableCell>
-                  <TableCell align="center">
-                    {row.rs_sparkline_data ? (
-                      <Box display="flex" justifyContent="center">
-                        <RSSparkline
-                          data={row.rs_sparkline_data}
-                          trend={row.rs_trend}
-                          width={117}
-                          height={20}
-                        />
-                      </Box>
-                    ) : '-'}
-                  </TableCell>
-                  <TableCell align="center" sx={{
-                    color: 'text.secondary', fontSize: '12px',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140,
-                  }}>
-                    {row.ibd_industry_group || '-'}
-                  </TableCell>
-                  <TableCell align="center" sx={{
-                    fontFamily: 'monospace', fontWeight: row.ibd_group_rank && row.ibd_group_rank <= 20 ? 600 : 400,
-                    color: getGroupRankColor(row.ibd_group_rank),
-                  }}>
-                    {row.ibd_group_rank ?? '-'}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {topResults.length === 0 ? (
-                <TableRow>
-                  <TableCell align="center" colSpan={9}>
-                    No scan candidates match the current filters.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+        )}
+      />
+
+      <DailyScanRowsTable
+        testId="leaders-in-leading-groups-section"
+        title="Leaders in Leading Groups"
+        subtitle="Top 20 by report card: group rank <=40, RS >=80, score >=70, dollar volume >= $100M."
+        rows={leadingGroupRows}
+        chartEnabledSymbols={chartEnabledSymbols}
+        navigationSymbols={leadingGroupNavigationSymbols}
+        onOpenChart={handleRowClick}
+        emptyMessage="No leaders in leading groups match the current snapshot."
+        showRs
+        priceSparklineWidth={195}
+        priceSparklineInnerWidth={150}
+      />
 
       <Paper elevation={0} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider' }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
@@ -402,7 +341,7 @@ function StaticHomePage() {
         onClose={() => setChartModalOpen(false)}
         initialSymbol={selectedChartSymbol}
         chartIndex={chartIndexQuery.data}
-        navigationSymbols={navigationSymbols}
+        navigationSymbols={modalNavigationSymbols}
       />
     </Box>
   );

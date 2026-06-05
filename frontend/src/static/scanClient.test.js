@@ -128,6 +128,20 @@ describe('static scan client', () => {
     expect(filtered.map((row) => row.symbol)).toEqual(['MSFT', 'SNOW']);
   });
 
+  it('filters by IBD group rank range', () => {
+    const testRows = [
+      { ...rows[0], symbol: 'LEADER', ibd_group_rank: 40 },
+      { ...rows[1], symbol: 'LAGGING_GROUP', ibd_group_rank: 41 },
+      { ...rows[2], symbol: 'UNKNOWN_GROUP', ibd_group_rank: null },
+    ];
+    const filters = buildDefaultScanFilters();
+    filters.ibdGroupRank = { min: null, max: 40 };
+
+    const filtered = filterStaticScanRows(testRows, filters);
+
+    expect(filtered.map((row) => row.symbol)).toEqual(['LEADER']);
+  });
+
   it('resolves IPO date presets to a cutoff (not raw string comparison)', () => {
     // Frozen clock: 2024-01-15 UTC. Derived cutoffs:
     //   1y  → 2023-01-15   5y → 2019-01-15   6m → 2023-07-15
@@ -212,6 +226,16 @@ describe('static scan client', () => {
     expect(sorted.map((row) => row.symbol)).toEqual(['FULL80', 'FULL70', 'IPO95', 'NEW1']);
   });
 
+  it('can sort composite score exactly for preset-defined rankings', () => {
+    const sorted = sortStaticScanRows([
+      { symbol: 'IPO95', scan_mode: 'ipo_weighted', composite_score: 95 },
+      { symbol: 'FULL80', scan_mode: 'full', composite_score: 80 },
+      { symbol: 'FULL70', scan_mode: 'full', composite_score: 70 },
+    ], 'composite_score', 'desc', { prioritizeCompositeScanMode: false });
+
+    expect(sorted.map((row) => row.symbol)).toEqual(['IPO95', 'FULL80', 'FULL70']);
+  });
+
   it('keeps null composite scores last within the same scan-mode bucket for desc sorting', () => {
     const sorted = sortStaticScanRows([
       { symbol: 'FULLNULL', scan_mode: 'full', composite_score: null },
@@ -232,5 +256,14 @@ describe('static scan client', () => {
     ], 'composite_score', 'asc');
 
     expect(sorted.map((row) => row.symbol)).toEqual(['FULL70', 'FULL80', 'IPO95', 'NEW1']);
+  });
+
+  it('uses symbol tiebreaks for equal ascending composite scores', () => {
+    const sorted = sortStaticScanRows([
+      { symbol: 'ZFULL', scan_mode: 'full', composite_score: 80 },
+      { symbol: 'AIPO', scan_mode: 'ipo_weighted', composite_score: 80 },
+    ], 'composite_score', 'asc');
+
+    expect(sorted.map((row) => row.symbol)).toEqual(['AIPO', 'ZFULL']);
   });
 });

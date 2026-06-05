@@ -15,6 +15,7 @@ const RANGE_FILTER_TO_FIELD = {
   rs3m: 'rs_rating_3m',
   rs12m: 'rs_rating_12m',
   epsRating: 'eps_rating',
+  ibdGroupRank: 'ibd_group_rank',
   price: 'current_price',
   adrPercent: 'adr_percent',
   epsGrowth: 'eps_growth_qq',
@@ -199,10 +200,18 @@ export const filterStaticScanRows = (rows, filters) => {
   });
 };
 
-export const sortStaticScanRows = (rows, sortBy, sortOrder = 'desc') => {
+export const sortStaticScanRows = (
+  rows,
+  sortBy,
+  sortOrder = 'desc',
+  { prioritizeCompositeScanMode = true } = {},
+) => {
   const direction = sortOrder === 'asc' ? 1 : -1;
+  const useCompositeModePriority = prioritizeCompositeScanMode &&
+    sortBy === 'composite_score' &&
+    sortOrder === 'desc';
   return [...rows].sort((left, right) => {
-    if (sortBy === 'composite_score' && sortOrder === 'desc') {
+    if (useCompositeModePriority) {
       const modeComparison = compareValues(
         getScanModeSortPriority(left),
         getScanModeSortPriority(right),
@@ -225,7 +234,7 @@ export const sortStaticScanRows = (rows, sortBy, sortOrder = 'desc') => {
     if (comparison !== 0) {
       return comparison * direction;
     }
-    if (sortBy === 'composite_score') {
+    if (useCompositeModePriority) {
       const modeComparison = compareValues(
         getScanModeSortPriority(left),
         getScanModeSortPriority(right),

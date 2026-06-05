@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,6 +64,39 @@ const manifest = {
   },
 };
 
+const leadersPresetScreen = {
+  id: 'leaders_in_leading_groups',
+  name: 'Leaders in Leading Groups',
+  short_name: 'Leaders',
+  description: 'Strong report-card stocks in top 40 IBD groups',
+  tier: 2,
+  filters: {
+    ibdGroupRank: { min: null, max: 40 },
+    rsRating: { min: 80, max: null },
+    compositeScore: { min: 70, max: null },
+    minVolume: 100_000_000,
+  },
+  sort_by: 'composite_score',
+  sort_order: 'desc',
+};
+
+const makeLeaderRow = (index, overrides = {}) => ({
+  symbol: `LEAD${String(index).padStart(2, '0')}`,
+  company_name: `Leader ${index}`,
+  composite_score: 100 - index,
+  rs_rating: 95,
+  current_price: 100 + index,
+  rating: 'Strong Buy',
+  volume: 150_000_000,
+  market_cap: 2_000_000_000,
+  currency: 'USD',
+  ibd_industry_group: 'Semiconductors',
+  ibd_group_rank: 10,
+  price_sparkline_data: null,
+  rs_sparkline_data: null,
+  ...overrides,
+});
+
 describe('StaticHomePage', () => {
   let homePayload;
   let scanManifestPayload;
@@ -121,6 +154,7 @@ describe('StaticHomePage', () => {
       chunks: [
         { path: 'markets/us/scan/chunks/chunk-0001.json' },
       ],
+      preset_screens: [leadersPresetScreen],
     };
     scanChunkPayload = {
       rows: [
@@ -237,7 +271,7 @@ describe('StaticHomePage', () => {
     renderWithProviders(<StaticHomePage />);
 
     expect(await screen.findByText('0700.HK')).toBeInTheDocument();
-    expect(screen.getByText('MCap')).toBeInTheDocument();
+    expect(screen.getAllByText('MCap').length).toBeGreaterThan(0);
     expect(screen.getByText('$500.0M')).toBeInTheDocument();
     expect(screen.queryByText('HK$3.9T')).not.toBeInTheDocument();
     expect(fetchStaticJson).toHaveBeenCalledWith('markets/us/scan/manifest.json');
@@ -262,6 +296,91 @@ describe('StaticHomePage', () => {
         open: true,
         initialSymbol: 'NVDA',
         navigationSymbols: ['NVDA', 'AAPL'],
+      });
+    });
+  });
+
+  it('shows top 20 leaders in leading groups after top scan candidates with leader-scoped chart navigation', async () => {
+    const leaderRows = Array.from({ length: 21 }, (_, index) => makeLeaderRow(index + 1));
+    // Verifies preset sorting stays exact and does not demote IPO-weighted rows behind lower-scoring full rows.
+    leaderRows[1] = makeLeaderRow(2, { scan_mode: 'ipo_weighted' });
+    const rejectedRows = [
+      makeLeaderRow(31, { symbol: 'WEAKRS', rs_rating: 79 }),
+      makeLeaderRow(32, { symbol: 'LATEGROUP', ibd_group_rank: 41 }),
+      makeLeaderRow(33, { symbol: 'LOWSCORE', composite_score: 69 }),
+      makeLeaderRow(34, { symbol: 'THINVOL', volume: 99_999_999 }),
+    ];
+    useStaticChartIndex.mockReturnValue({
+      data: {
+        symbols: [
+          { symbol: 'LEAD01', rank: 1, path: 'charts/LEAD01.json' },
+          { symbol: 'LEAD02', rank: 2, path: 'charts/LEAD02.json' },
+        ],
+      },
+    });
+    fetchStaticJson.mockImplementation(async (path) => {
+      if (path === 'markets/us/home.json') {
+        return {
+          market_display_name: 'United States',
+          freshness: {
+            scan_as_of_date: '2026-04-24',
+            breadth_latest_date: '2026-04-24',
+            groups_latest_date: '2026-04-24',
+          },
+          key_markets: [],
+          scan_summary: { top_results: [] },
+          top_groups: [],
+        };
+      }
+
+      if (path === 'markets/us/scan/manifest.json') {
+        return {
+          initial_rows: [],
+          chunks: [
+            { path: 'markets/us/scan/chunks/chunk-0001.json' },
+          ],
+          preset_screens: [leadersPresetScreen],
+        };
+      }
+
+      if (path === 'markets/us/scan/chunks/chunk-0001.json') {
+        return {
+          rows: [...leaderRows, ...rejectedRows],
+        };
+      }
+
+      throw new Error(`Unexpected static path: ${path}`);
+    });
+
+    renderWithProviders(<StaticHomePage />);
+
+    const topCandidatesHeading = await screen.findByText('Top Scan Candidates');
+    const leadersHeading = await screen.findByText('Leaders in Leading Groups');
+    const topGroupsHeading = await screen.findByText('Top 10 Groups');
+    expect(
+      topCandidatesHeading.compareDocumentPosition(leadersHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      leadersHeading.compareDocumentPosition(topGroupsHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    const leadersSection = screen.getByTestId('leaders-in-leading-groups-section');
+    expect(within(leadersSection).getByText('LEAD01')).toBeInTheDocument();
+    expect(within(leadersSection).getByText('LEAD02')).toBeInTheDocument();
+    expect(within(leadersSection).queryByText('LEAD21')).not.toBeInTheDocument();
+    expect(within(leadersSection).queryByText('WEAKRS')).not.toBeInTheDocument();
+    expect(within(leadersSection).queryByText('LATEGROUP')).not.toBeInTheDocument();
+    expect(within(leadersSection).queryByText('LOWSCORE')).not.toBeInTheDocument();
+    expect(within(leadersSection).queryByText('THINVOL')).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(within(leadersSection).getByText('LEAD01'));
+
+    await waitFor(() => {
+      const props = modalSpy.mock.calls.at(-1)?.[0];
+      expect(props).toMatchObject({
+        open: true,
+        initialSymbol: 'LEAD01',
+        navigationSymbols: ['LEAD01', 'LEAD02'],
       });
     });
   });
