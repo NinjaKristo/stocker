@@ -1093,6 +1093,81 @@ class TestPartialFailures:
         assert result.failed_symbols == 1
 
     @_PATCH_TRADING_DAY
+    def test_error_result_is_reported_in_failure_diagnostics(self, _mock_td):
+        results = {
+            "AAPL": {
+                "composite_score": 85.0,
+                "rating": "Strong Buy",
+                "screeners_passed": 1,
+            },
+            "MSFT": {
+                "result_status": "error",
+                "error": "Screener execution failed: setup_engine",
+                "details": {
+                    "data_errors": {
+                        "price_data": "No price data returned from batch-only price path"
+                    }
+                },
+            },
+            "GOOGL": {
+                "composite_score": 70.0,
+                "rating": "Buy",
+                "screeners_passed": 1,
+            },
+        }
+        uow, scanner = _make_uow(scanner_results=results)
+        use_case = BuildDailyFeatureSnapshotUseCase(scanner=scanner)
+
+        result = use_case.execute(
+            uow, _make_cmd(), FakeProgressSink(), FakeCancellationToken()
+        )
+
+        assert result.failed_symbols == 1
+        assert result.failure_diagnostics["reason_counts"] == {
+            "scanner_error_result": 1
+        }
+        assert result.failure_diagnostics["samples"] == [
+            {
+                "symbol": "MSFT",
+                "reason": "scanner_error_result",
+                "error": "Screener execution failed: setup_engine",
+                "data_errors": {
+                    "price_data": "No price data returned from batch-only price path"
+                },
+            }
+        ]
+
+    @_PATCH_TRADING_DAY
+    def test_scanner_exception_is_reported_in_failure_diagnostics(self, _mock_td):
+        class ExplodingScanner:
+            def scan_stock_multi(self, symbol, screener_names, **kw):
+                if symbol == "BOOM":
+                    raise RuntimeError("kaboom")
+                return {
+                    "composite_score": 75.0,
+                    "rating": "Buy",
+                    "screeners_passed": 1,
+                }
+
+        uow, _ = _make_uow(symbols=["AAPL", "BOOM", "GOOGL"])
+        use_case = BuildDailyFeatureSnapshotUseCase(scanner=ExplodingScanner())
+
+        result = use_case.execute(
+            uow, _make_cmd(), FakeProgressSink(), FakeCancellationToken()
+        )
+
+        assert result.failed_symbols == 1
+        assert result.failure_diagnostics["reason_counts"] == {"scan_exception": 1}
+        assert result.failure_diagnostics["samples"] == [
+            {
+                "symbol": "BOOM",
+                "reason": "scan_exception",
+                "error": "RuntimeError: kaboom",
+                "data_errors": {},
+            }
+        ]
+
+    @_PATCH_TRADING_DAY
     def test_insufficient_history_rows_are_persisted_without_counting_as_failures(self, _mock_td):
         results = {
             "AAPL": {
