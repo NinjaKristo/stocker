@@ -716,6 +716,7 @@ def test_refresh_static_daily_prices_filters_to_selected_market(monkeypatch):
                     "symbols": list(symbols),
                     "period": period,
                     "market": market,
+                    "start_batch_size": start_batch_size,
                 }
             )
             return {
@@ -725,12 +726,17 @@ def test_refresh_static_daily_prices_filters_to_selected_market(monkeypatch):
 
     monkeypatch.setattr(export_script, "SessionLocal", session_factory)
     monkeypatch.setattr(export_script, "BulkDataFetcher", lambda: _FakeFetcher())
+    monkeypatch.setattr(export_script, "_static_daily_price_refresh_batch_size", lambda market: 25)
     monkeypatch.setattr(
         export_script,
         "get_price_cache",
         lambda: SimpleNamespace(
-            store_batch_in_cache=lambda payload, also_store_db=True: stored_batches.append(
-                {"symbols": sorted(payload.keys()), "also_store_db": also_store_db}
+            store_batch_in_cache=lambda payload, also_store_db=True, market=None: stored_batches.append(
+                {
+                    "symbols": sorted(payload.keys()),
+                    "also_store_db": also_store_db,
+                    "market": market,
+                }
             )
         ),
     )
@@ -744,8 +750,132 @@ def test_refresh_static_daily_prices_filters_to_selected_market(monkeypatch):
     assert result["total_active_symbols"] == 3
     assert result["supported_symbols"] == 2
     assert result["skipped_unsupported_symbols"] == 1
-    assert fetch_calls == [{"symbols": ["0700.HK"], "period": "7d", "market": "HK"}]
-    assert stored_batches == [{"symbols": ["0700.HK"], "also_store_db": True}]
+    assert fetch_calls == [
+        {
+            "symbols": ["0700.HK"],
+            "period": "7d",
+            "market": "HK",
+            "start_batch_size": 25,
+        },
+        {
+            "symbols": ["9988.HK"],
+            "period": "2y",
+            "market": "HK",
+            "start_batch_size": 25,
+        },
+    ]
+    assert stored_batches == [
+        {"symbols": ["0700.HK"], "also_store_db": True, "market": "HK"},
+        {"symbols": ["9988.HK"], "also_store_db": True, "market": "HK"},
+    ]
+
+
+def test_refresh_static_daily_prices_fetches_no_history_symbols_with_full_period(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=[StockUniverse.__table__, StockPrice.__table__])
+    session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
+
+    with session_factory() as db:
+        db.add_all(
+            [
+                StockUniverse(symbol="OLD.NS", market="IN", is_active=True, market_cap=100.0),
+                StockUniverse(symbol="NEW.NS", market="IN", is_active=True, market_cap=90.0),
+            ]
+        )
+        db.add(
+            StockPrice(
+                symbol="OLD.NS",
+                date=date(2026, 6, 3),
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                volume=1000,
+            )
+        )
+        db.commit()
+
+    fetch_calls = []
+    stored_batches = []
+
+    class _FakeFetcher:
+        def fetch_prices_in_batches(self, symbols, period="2y", start_batch_size=None, market=None):
+            fetch_calls.append(
+                {
+                    "symbols": list(symbols),
+                    "period": period,
+                    "market": market,
+                    "start_batch_size": start_batch_size,
+                }
+            )
+            return {
+                symbol: {"price_data": SimpleNamespace(empty=False), "has_error": False}
+                for symbol in symbols
+            }
+
+    monkeypatch.setattr(export_script, "SessionLocal", session_factory)
+    monkeypatch.setattr(export_script, "BulkDataFetcher", lambda: _FakeFetcher())
+    monkeypatch.setattr(export_script, "_static_daily_price_refresh_batch_size", lambda market: 25)
+    monkeypatch.setattr(
+        export_script,
+        "get_price_cache",
+        lambda: SimpleNamespace(
+            store_batch_in_cache=lambda payload, also_store_db=True, market=None: stored_batches.append(
+                {
+                    "symbols": sorted(payload.keys()),
+                    "also_store_db": also_store_db,
+                    "market": market,
+                }
+            )
+        ),
+    )
+
+    result = export_script._refresh_static_daily_prices(  # noqa: SLF001 - intentional unit test coverage
+        as_of_date=date(2026, 6, 4),
+        market="IN",
+    )
+
+    assert fetch_calls == [
+        {
+            "symbols": ["OLD.NS"],
+            "period": "7d",
+            "market": "IN",
+            "start_batch_size": 25,
+        },
+        {
+            "symbols": ["NEW.NS"],
+            "period": "2y",
+            "market": "IN",
+            "start_batch_size": 25,
+        },
+    ]
+    assert stored_batches == [
+        {"symbols": ["OLD.NS"], "also_store_db": True, "market": "IN"},
+        {"symbols": ["NEW.NS"], "also_store_db": True, "market": "IN"},
+    ]
+    assert result["stale_symbols"] == 1
+    assert result["no_history_symbols"] == 1
+    assert result["yahoo_fetched_symbols"] == 2
+
+
+def test_static_daily_price_refresh_batch_size_uses_market_policy(monkeypatch):
+    import app.services.rate_budget_policy as rate_budget_policy
+
+    calls = []
+
+    class _FakePolicy:
+        def get_batch_size(self, provider, market):
+            calls.append((provider, market))
+            return 31
+
+    monkeypatch.setattr(rate_budget_policy, "get_rate_budget_policy", lambda: _FakePolicy())
+
+    assert export_script._static_daily_price_refresh_batch_size("IN") == 31  # noqa: SLF001
+    assert calls == [("yfinance", "IN")]
+    assert (
+        export_script._static_daily_price_refresh_batch_size(None)  # noqa: SLF001
+        == export_script.STATIC_DAILY_PRICE_REFRESH_BATCH_SIZE
+    )
 
 
 def test_run_daily_refresh_reenriches_ibd_metadata_after_group_rank_backfill(monkeypatch):
@@ -1255,8 +1385,12 @@ def test_refresh_static_daily_prices_retries_in_rate_limited_failures(monkeypatc
         export_script,
         "get_price_cache",
         lambda: SimpleNamespace(
-            store_batch_in_cache=lambda payload, also_store_db=True: stored_batches.append(
-                {"symbols": sorted(payload.keys()), "also_store_db": also_store_db}
+            store_batch_in_cache=lambda payload, also_store_db=True, market=None: stored_batches.append(
+                {
+                    "symbols": sorted(payload.keys()),
+                    "also_store_db": also_store_db,
+                    "market": market,
+                }
             )
         ),
     )

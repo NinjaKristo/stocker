@@ -35,6 +35,7 @@ from app.wiring.bootstrap import (
 
 
 STATIC_DAILY_PRICE_REFRESH_PERIOD = "7d"
+STATIC_DAILY_PRICE_BOOTSTRAP_PERIOD = "2y"
 STATIC_DAILY_PRICE_REFRESH_BATCH_SIZE = 250
 STATIC_GROUP_HISTORY_LOOKBACK_DAYS = 100
 STATIC_BREADTH_HISTORY_MIN_TRADING_DAYS = 20
@@ -78,6 +79,14 @@ def _resolve_latest_completed_trading_date(market: str) -> date:
 
 def _iter_chunks(items: list[str], chunk_size: int) -> list[list[str]]:
     return [items[index:index + chunk_size] for index in range(0, len(items), chunk_size)]
+
+
+def _static_daily_price_refresh_batch_size(market: str | None) -> int:
+    if market:
+        from app.services.rate_budget_policy import get_rate_budget_policy
+
+        return get_rate_budget_policy().get_batch_size("yfinance", market)
+    return STATIC_DAILY_PRICE_REFRESH_BATCH_SIZE
 
 
 def _market_pointer_key(market: str) -> str:
@@ -133,19 +142,12 @@ def _refresh_static_daily_prices(*, as_of_date: date, market: str | None = None)
         symbol for symbol in supported_symbols if symbol not in latest_by_symbol
     ]
 
-    if not stale_symbols:
-        if no_history_symbols:
-            print(
-                "[static-daily prices] No reusable cached price history found; "
-                "relying on the batch-only feature snapshot path for full history fetch.",
-                flush=True,
-            )
-        else:
-            print(
-                f"[static-daily prices] Database already has fresh price rows for "
-                f"{len(db_fresh_symbols):,} supported symbols as of {as_of_date}.",
-                flush=True,
-            )
+    if not stale_symbols and not no_history_symbols:
+        print(
+            f"[static-daily prices] Database already has fresh price rows for "
+            f"{len(db_fresh_symbols):,} supported symbols as of {as_of_date}.",
+            flush=True,
+        )
         return {
             "status": "skipped",
             "market": market,
@@ -160,50 +162,79 @@ def _refresh_static_daily_prices(*, as_of_date: date, market: str | None = None)
             "yahoo_failed_symbols": 0,
         }
 
-    refreshed = 0
-    failed = 0
-    rate_limited_symbols: list[str] = []
-    total = len(stale_symbols)
-    total_batches = (total + STATIC_DAILY_PRICE_REFRESH_BATCH_SIZE - 1) // STATIC_DAILY_PRICE_REFRESH_BATCH_SIZE
+    batch_size = _static_daily_price_refresh_batch_size(market)
+    total_batches = (
+        (len(stale_symbols) + batch_size - 1) // batch_size
+        + (len(no_history_symbols) + batch_size - 1) // batch_size
+    )
 
     print(
-        f"[static-daily prices] Refreshing {total:,} stale symbols in {total_batches} batches "
-        f"for {as_of_date} (DB fresh: {len(db_fresh_symbols):,}, unsupported skipped: {len(skipped_symbols):,}).",
+        f"[static-daily prices] Refreshing {len(stale_symbols):,} stale and "
+        f"{len(no_history_symbols):,} no-history symbols in {total_batches} batches for {as_of_date} "
+        f"(DB fresh: {len(db_fresh_symbols):,}, unsupported skipped: {len(skipped_symbols):,}).",
         flush=True,
     )
 
-    for batch_index, batch_symbols in enumerate(
-        _iter_chunks(stale_symbols, STATIC_DAILY_PRICE_REFRESH_BATCH_SIZE),
-        start=1,
-    ):
-        processed_before = refreshed + failed
-        print(
-            f"[static-daily prices] Batch {batch_index}/{total_batches}: "
-            f"{processed_before:,}/{total:,} processed, fetching {len(batch_symbols):,} symbols from Yahoo.",
-            flush=True,
-        )
-        batch_results = fetcher.fetch_prices_in_batches(
-            batch_symbols,
-            period=STATIC_DAILY_PRICE_REFRESH_PERIOD,
-            market=market,
-        )
-        batch_to_store: dict[str, Any] = {}
-        for symbol, payload in batch_results.items():
-            price_data = payload.get("price_data")
-            if not payload.get("has_error") and price_data is not None and not price_data.empty:
-                batch_to_store[symbol] = price_data
-                refreshed += 1
-            else:
-                failed += 1
-                if _is_rate_limit_failure(payload):
-                    rate_limited_symbols.append(symbol)
-        if batch_to_store:
-            price_cache.store_batch_in_cache(batch_to_store, also_store_db=True)
-        print(
-            f"[static-daily prices] Batch {batch_index}/{total_batches} complete: "
-            f"{refreshed + failed:,}/{total:,} processed, {refreshed:,} refreshed, {failed:,} failed.",
-            flush=True,
-        )
+    def _fetch_and_store(symbols: list[str], *, period: str) -> tuple[int, int, list[str]]:
+        refreshed_count = 0
+        failed_count = 0
+        rate_limited: list[str] = []
+        total_symbols = len(symbols)
+        if not symbols:
+            return 0, 0, []
+        total_group_batches = (total_symbols + batch_size - 1) // batch_size
+        for batch_index, batch_symbols in enumerate(
+            _iter_chunks(symbols, batch_size),
+            start=1,
+        ):
+            processed_before = refreshed_count + failed_count
+            print(
+                f"[static-daily prices] Batch {batch_index}/{total_group_batches}: "
+                f"{processed_before:,}/{total_symbols:,} processed, fetching "
+                f"{len(batch_symbols):,} symbols from Yahoo ({period}).",
+                flush=True,
+            )
+            batch_results = fetcher.fetch_prices_in_batches(
+                batch_symbols,
+                period=period,
+                start_batch_size=batch_size,
+                market=market,
+            )
+            batch_to_store: dict[str, Any] = {}
+            for symbol, payload in batch_results.items():
+                price_data = payload.get("price_data")
+                if not payload.get("has_error") and price_data is not None and not price_data.empty:
+                    batch_to_store[symbol] = price_data
+                    refreshed_count += 1
+                else:
+                    failed_count += 1
+                    if _is_rate_limit_failure(payload):
+                        rate_limited.append(symbol)
+            if batch_to_store:
+                price_cache.store_batch_in_cache(
+                    batch_to_store,
+                    also_store_db=True,
+                    market=market,
+                )
+            print(
+                f"[static-daily prices] Batch {batch_index}/{total_group_batches} complete: "
+                f"{refreshed_count + failed_count:,}/{total_symbols:,} processed, "
+                f"{refreshed_count:,} refreshed, {failed_count:,} failed.",
+                flush=True,
+            )
+        return refreshed_count, failed_count, rate_limited
+
+    stale_refreshed, stale_failed, stale_rate_limited = _fetch_and_store(
+        stale_symbols,
+        period=STATIC_DAILY_PRICE_REFRESH_PERIOD,
+    )
+    bootstrap_refreshed, bootstrap_failed, bootstrap_rate_limited = _fetch_and_store(
+        no_history_symbols,
+        period=STATIC_DAILY_PRICE_BOOTSTRAP_PERIOD,
+    )
+    refreshed = stale_refreshed + bootstrap_refreshed
+    failed = stale_failed + bootstrap_failed
+    rate_limited_symbols = stale_rate_limited + bootstrap_rate_limited
 
     retry_stats = _retry_rate_limited_failures(
         market=market,
@@ -305,7 +336,11 @@ def _retry_rate_limited_failures(
             recovered_payload[symbol] = price_data
             recovered += 1
     if recovered_payload:
-        price_cache.store_batch_in_cache(recovered_payload, also_store_db=True)
+        price_cache.store_batch_in_cache(
+            recovered_payload,
+            also_store_db=True,
+            market=market,
+        )
     still_failed = len(unique_symbols) - recovered
     print(
         f"[static-daily prices:{normalized}] Rate-limited retry complete: "
