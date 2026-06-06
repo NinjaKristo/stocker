@@ -3,6 +3,7 @@ import {
   priceLowFraction,
   rsFraction,
   computeRsBand,
+  rsBandForRange,
 } from './rsBand';
 
 // Layout constants mirrored from rsBand.js defaults, for assertion math.
@@ -108,5 +109,44 @@ describe('computeRsBand', () => {
     expect(rTop).toBeLessThan(FLOOR_TOP);
     assertNoOverlap(data, rTop);
     assertGapMet(data, rTop);
+  });
+});
+
+describe('rsBandForRange', () => {
+  const candles = [
+    { time: '2025-01-01', high: 102, low: 100 },
+    { time: '2025-01-02', high: 112, low: 110 },
+    { time: '2025-01-03', high: 122, low: 120 },
+    { time: '2025-01-04', high: 132, low: 130 },
+  ];
+  const rsLine = [
+    { time: '2025-01-01', value: 1 },
+    { time: '2025-01-02', value: 2 },
+    { time: '2025-01-03', value: 3 },
+    { time: '2025-01-04', value: 4 },
+  ];
+
+  it('returns the floor strip when fewer than 2 bars are in range', () => {
+    const r = rsBandForRange(candles, rsLine, { from: '2025-01-01', to: '2025-01-01' });
+    expect(r).toBeCloseTo(FLOOR_TOP, 6); // rsBottom - minBand
+  });
+
+  it('uses all bars when range is null', () => {
+    const full = rsBandForRange(candles, rsLine, null);
+    expect(full).toBeLessThanOrEqual(FLOOR_TOP);
+  });
+
+  it('only includes bars present in BOTH candles and rs line, within range', () => {
+    const partialRs = rsLine.slice(0, 2); // only first two have RS values
+    const r = rsBandForRange(candles, partialRs, null);
+    // 2 aligned bars -> still computes (>= cap, <= floor)
+    expect(r).toBeGreaterThanOrEqual(CAP_TOP);
+    expect(r).toBeLessThanOrEqual(FLOOR_TOP);
+  });
+
+  it('returns the floor strip when the range excludes all bars', () => {
+    // Range is entirely after the data, so every candle is filtered out.
+    const r = rsBandForRange(candles, rsLine, { from: '2025-02-01', to: '2025-02-28' });
+    expect(r).toBeCloseTo(FLOOR_TOP, 6);
   });
 });

@@ -70,3 +70,23 @@ export function computeRsBand(input) {
   // pinning to floorTop is always overlap-free even if the gap can't be met.
   return Math.min(Math.max(computedRTop, capTop), floorTop);
 }
+
+// Align RS values to candles by time, filter to the visible range, and compute
+// the RS band top. `range` is lightweight-charts' getVisibleRange() result
+// ({ from, to }) or null. Times are the same type as the series data
+// (ISO 'YYYY-MM-DD' strings here), so direct comparison is chronological.
+export function rsBandForRange(candles, rsLine, range) {
+  const rsByTime = new Map((rsLine || []).map((p) => [p.time, p.value]));
+  const lows = [];
+  const highs = [];
+  const rsValues = [];
+  for (const c of candles || []) {
+    if (range && (c.time < range.from || c.time > range.to)) continue;
+    const v = rsByTime.get(c.time);
+    if (v === undefined) continue;
+    lows.push(c.low);
+    highs.push(c.high);
+    rsValues.push(v);
+  }
+  return computeRsBand({ lows, highs, rsValues });
+}
