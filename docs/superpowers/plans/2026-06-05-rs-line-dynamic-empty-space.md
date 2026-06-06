@@ -549,10 +549,10 @@ cd /Users/admin/Documents/Work/stock-screener/.claude/worktrees/fix+rs-line-belo
 git push
 ```
 
-- [ ] **Step 2: Update PR #215 description** so it reflects the dynamic band (superseding the fixed strip):
+- [ ] **Step 2: Update PR #216 description** so it reflects the dynamic band (superseding the fixed strip):
 
 ```bash
-gh pr edit 215 --body "$(cat <<'EOF'
+gh pr edit 216 --body "$(cat <<'EOF'
 ## Summary
 
 Reworks the RS (relative-strength) line so it is **dynamic and readable** instead
