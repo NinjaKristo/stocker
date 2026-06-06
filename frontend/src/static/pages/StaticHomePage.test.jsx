@@ -361,8 +361,34 @@ describe('StaticHomePage', () => {
     renderWithProviders(<StaticHomePage />);
 
     const leadersSection = await screen.findByTestId('leaders-in-leading-groups-section');
+    expect(
+      within(leadersSection).getByText('Top 20 by report card: group rank <=40, RS >=80, dollar volume >= 1,300,000.')
+    ).toBeInTheDocument();
     expect(within(leadersSection).getByText('LOCALLEAD')).toBeInTheDocument();
     expect(within(leadersSection).queryByText('THINLEAD')).not.toBeInTheDocument();
+  });
+
+  it('omits the leaders liquidity subtitle when the resolved preset has no volume floor', async () => {
+    scanManifestPayload.default_filters = { minVolume: null };
+    scanManifestPayload.preset_screens = [makeLeadersPresetScreen(null)];
+    scanManifestPayload.initial_rows = [
+      makeLeaderRow(1, {
+        symbol: 'NOFLOOR',
+        volume: 1,
+        ibd_group_rank: 10,
+        rs_rating: 90,
+      }),
+    ];
+    scanManifestPayload.chunks = [];
+
+    renderWithProviders(<StaticHomePage />);
+
+    const leadersSection = await screen.findByTestId('leaders-in-leading-groups-section');
+    expect(
+      within(leadersSection).getByText('Top 20 by report card: group rank <=40, RS >=80.')
+    ).toBeInTheDocument();
+    expect(within(leadersSection).queryByText(/dollar volume >=/i)).not.toBeInTheDocument();
+    expect(within(leadersSection).getByText('NOFLOOR')).toBeInTheDocument();
   });
 
   it('shows top 20 leaders in leading groups after top scan candidates with leader-scoped chart navigation', async () => {

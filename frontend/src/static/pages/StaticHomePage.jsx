@@ -135,6 +135,10 @@ function StaticHomePage() {
     () => leadingGroupRows.map((r) => r.symbol).filter((s) => chartEnabledSymbols.has(s)),
     [leadingGroupRows, chartEnabledSymbols],
   );
+  const leadingGroupMinVolume = leadingGroupScreen?.filters?.minVolume;
+  const leadingGroupSubtitle = leadingGroupMinVolume == null
+    ? 'Top 20 by report card: group rank <=40, RS >=80.'
+    : `Top 20 by report card: group rank <=40, RS >=80, dollar volume >= ${formatNumber(leadingGroupMinVolume)}.`;
 
   if (manifestQuery.isLoading || homeQuery.isLoading || scanBundleQuery.isLoading) {
     return (
@@ -301,7 +305,7 @@ function StaticHomePage() {
       <DailyScanRowsTable
         testId="leaders-in-leading-groups-section"
         title="Leaders in Leading Groups"
-        subtitle="Top 20 by report card: group rank <=40, RS >=80, using this market's default liquidity floor."
+        subtitle={leadingGroupSubtitle}
         rows={leadingGroupRows}
         chartEnabledSymbols={chartEnabledSymbols}
         navigationSymbols={leadingGroupNavigationSymbols}
