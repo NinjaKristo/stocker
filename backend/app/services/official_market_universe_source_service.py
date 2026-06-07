@@ -2292,7 +2292,7 @@ class OfficialMarketUniverseSourceService:
 
         rows: list[dict[str, Any]] = []
         for row in filtered.to_dict("records"):
-            code = self._normalize_digits(row.get("コード"), pad_to=4, max_digits=5)
+            code = self._normalize_jp_code(row.get("コード"))
             name = str(row.get("銘柄名") or "").strip()
             if not code or not name:
                 continue
@@ -2431,6 +2431,26 @@ class OfficialMarketUniverseSourceService:
             raise ValueError(f"Unexpected local code length for {raw!r}")
         if len(digits) < pad_to:
             return digits.zfill(pad_to)
+        return digits
+
+    @staticmethod
+    def _normalize_jp_code(value: Any) -> str:
+        raw = str(value or "").strip().upper().replace(" ", "")
+        if not raw:
+            return ""
+        if raw.endswith(".0") and raw[:-2].isdigit():
+            raw = raw[:-2]
+
+        token = re.sub(r"[^0-9A-Z]", "", raw)
+        match = re.fullmatch(r"0*([0-9]{3,5})([A-Z]?)", token)
+        if match is None:
+            return ""
+
+        digits, suffix = match.groups()
+        if suffix:
+            return f"{digits.lstrip('0') or digits}{suffix}"
+        if len(digits) < 4:
+            return digits.zfill(4)
         return digits
 
     @staticmethod

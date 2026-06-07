@@ -7,6 +7,7 @@ import re
 from unittest.mock import MagicMock
 
 from celery.exceptions import Retry
+import pandas as pd
 import pytest
 import requests
 
@@ -47,6 +48,35 @@ def test_parse_jp_rows_filters_domestic_equities_and_sets_snapshot_date():
     assert snapshot.snapshot_id == "jpx-data-j-2026-03-31"
     assert [row["symbol"] for row in snapshot.rows] == ["1301.T", "7203.T"]
     assert [row["industry"] for row in snapshot.rows] == ["水産・農林業", "輸送用機器"]
+
+
+def test_parse_jp_rows_preserves_alphanumeric_jpx_codes():
+    service = OfficialMarketUniverseSourceService()
+    frame = pd.DataFrame(
+        [
+            {
+                "日付": "2026-06-05",
+                "コード": "130A",
+                "銘柄名": "Veritas In Silico",
+                "市場・商品区分": "グロース（内国株式）",
+                "33業種区分": "医薬品",
+                "17業種区分": "医薬品",
+            },
+            {
+                "日付": "2026-06-05",
+                "コード": "7203",
+                "銘柄名": "Toyota",
+                "市場・商品区分": "プライム（内国株式）",
+                "33業種区分": "輸送用機器",
+                "17業種区分": "自動車・輸送機",
+            },
+        ]
+    )
+
+    rows, snapshot_date = service._parse_jp_frame(frame)
+
+    assert snapshot_date == date(2026, 6, 5)
+    assert [row["symbol"] for row in rows] == ["130A.T", "7203.T"]
 
 
 def test_parse_nse_rows_filters_eq_series_and_canonicalizes_symbols():
