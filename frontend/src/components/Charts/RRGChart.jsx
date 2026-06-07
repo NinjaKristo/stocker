@@ -45,10 +45,11 @@ import {
 import { QUADRANT_COLORS, QUADRANT_FILLS, quadrantColor } from './rrgColors';
 import { buildTailPoints } from './rrgTrace';
 
-// Per-segment arrows render when at most this many series are shown; above it
-// (e.g. the unfiltered ~197-group view) only the most-recent segment gets one,
-// to keep the plot readable. Filter down to see the full per-week direction.
-const ARROW_DETAIL_LIMIT = 20;
+// Below this many series shown, the plot renders the full per-week detail:
+// graduated, hoverable tail dots + per-segment direction arrows. Above it (e.g.
+// the unfiltered ~197-series view) tails are line-only with a single most-recent
+// arrow per series, to stay light and readable. Filter down to get the detail.
+const DETAIL_LIMIT = 20;
 
 /** Symmetric axis bounds around the 100/100 cross, padded to the data extent. */
 const computeBound = (groups) => {
@@ -192,6 +193,11 @@ export default function RRGChart({ data, isLoading, error, onSelectGroup, height
   const lo = 100 - bound;
   const hi = 100 + bound;
 
+  // Single "detail level" driving both tail-dot richness and arrow density, so
+  // the default (all-series) view stays light and the filtered view gets the
+  // full per-week detail.
+  const detailed = shown.length <= DETAIL_LIMIT;
+
   const currentPoints = useMemo(
     () => shown.map((g) => ({ ...g, ...g.current, isCurrent: true })),
     [shown],
@@ -302,23 +308,24 @@ export default function RRGChart({ data, isLoading, error, onSelectGroup, height
               <ZAxis type="number" dataKey="num_stocks" range={[60, 500]} name="Constituents" />
               <Tooltip content={<RRGTooltip />} cursor={{ strokeDasharray: '3 3' }} />
 
-              {/* Tails: connecting line + graduated, hoverable per-week dots. */}
+              {/* Tails: connecting line, plus graduated hoverable per-week dots
+                  in the detailed (filtered) view; line-only when many series. */}
               {tails.map((t) => (
                 <Scatter
                   key={`tail-${t.name}`}
                   data={t.points}
                   line={{ stroke: t.color, strokeWidth: 1.25, strokeOpacity: 0.45 }}
                   lineType="joint"
-                  shape={<TailDot />}
+                  shape={detailed ? <TailDot /> : () => null}
                   isAnimationActive={false}
                   legendType="none"
                 />
               ))}
 
-              {/* Direction arrows along each trace. */}
+              {/* Direction arrows along each trace (per-segment when detailed). */}
               <Customized
                 component={(props) => (
-                  <TailArrows shown={shown} perSegment={shown.length <= ARROW_DETAIL_LIMIT} {...props} />
+                  <TailArrows shown={shown} perSegment={detailed} {...props} />
                 )}
               />
 
