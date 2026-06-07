@@ -20,6 +20,23 @@ export const weeksAgo = (asOfISO, pointISO) => {
  *   - isHead:   the most-recent point (the current position)
  *   - t:        0 (oldest) -> 1 (newest), for size/opacity gradients
  */
+/**
+ * Filter RRG series by selected names and/or an inclusive current-rank range.
+ * Both filters compose with AND; pass `rankRange = null` to disable rank
+ * filtering (when set, series with no rank are excluded).
+ */
+export const filterGroups = (groups, { names = [], rankRange = null } = {}) => {
+  const nameSet = names.length ? new Set(names) : null;
+  return (groups ?? []).filter((g) => {
+    if (nameSet && !nameSet.has(g.industry_group)) return false;
+    if (rankRange) {
+      const [lo, hi] = rankRange;
+      if (g.rank == null || g.rank < lo || g.rank > hi) return false;
+    }
+    return true;
+  });
+};
+
 export const buildTailPoints = (group, asOfISO) => {
   const tail = group?.tail ?? [];
   const last = tail.length - 1;

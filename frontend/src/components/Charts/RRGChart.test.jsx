@@ -51,6 +51,12 @@ describe('RRGChart', () => {
     expect(screen.getByText(/Sectors/)).toBeInTheDocument();
   });
 
+  it('renders a current-rank range slider (two thumbs)', () => {
+    renderWithProviders(<RRGChart data={sampleData} />);
+    expect(screen.getByText(/Rank 1/)).toBeInTheDocument();
+    expect(screen.getAllByRole('slider')).toHaveLength(2);
+  });
+
   it('renders a scope-aware filter control', () => {
     const { rerender } = renderWithProviders(<RRGChart data={sampleData} />);
     expect(screen.getByLabelText(/Filter groups/i)).toBeInTheDocument();

@@ -35,6 +35,7 @@ import {
 import {
   Autocomplete,
   TextField,
+  Slider,
   Box,
   Card,
   CardContent,
@@ -43,7 +44,7 @@ import {
   Alert,
 } from '@mui/material';
 import { QUADRANT_COLORS, QUADRANT_FILLS, quadrantColor } from './rrgColors';
-import { buildTailPoints } from './rrgTrace';
+import { buildTailPoints, filterGroups } from './rrgTrace';
 
 // Below this many series shown, the plot renders the full per-week detail:
 // graduated, hoverable tail dots + per-segment direction arrows. Above it (e.g.
@@ -176,18 +177,25 @@ export default function RRGChart({ data, isLoading, error, onSelectGroup, height
   const scopeLabel = data?.scope === 'sectors' ? 'Sectors' : 'Groups';
 
   const [selected, setSelected] = useState([]);
-  // Clear the filter when the dataset identity changes (scope/market switch),
-  // since the option names no longer apply.
+  const [rankRange, setRankRange] = useState(null); // null = full range (inactive)
+  // Clear filters when the dataset identity changes (scope/market switch), since
+  // the option names and rank extent no longer apply.
   useEffect(() => {
     setSelected([]);
+    setRankRange(null);
   }, [data?.scope, data?.market]);
 
   const allNames = useMemo(() => groups.map((g) => g.industry_group), [groups]);
-  const shown = useMemo(() => {
-    if (!selected.length) return groups;
-    const set = new Set(selected);
-    return groups.filter((g) => set.has(g.industry_group));
-  }, [groups, selected]);
+  const maxRank = useMemo(
+    () => groups.reduce((m, g) => (g.rank != null && g.rank > m ? g.rank : m), 1),
+    [groups],
+  );
+  const sliderValue = rankRange ?? [1, maxRank];
+  const rankActive = rankRange != null && (rankRange[0] > 1 || rankRange[1] < maxRank);
+  const shown = useMemo(
+    () => filterGroups(groups, { names: selected, rankRange: rankActive ? rankRange : null }),
+    [groups, selected, rankActive, rankRange],
+  );
 
   const bound = useMemo(() => computeBound(shown.length ? shown : groups), [shown, groups]);
   const lo = 100 - bound;
@@ -250,6 +258,23 @@ export default function RRGChart({ data, isLoading, error, onSelectGroup, height
             {asOf ? ` · ${asOf}` : ''}
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
+          {maxRank > 1 && (
+            <Box sx={{ width: 200 }}>
+              <Typography variant="caption" color="text.secondary">
+                Rank {sliderValue[0]}–{sliderValue[1]}
+              </Typography>
+              <Slider
+                size="small"
+                min={1}
+                max={maxRank}
+                value={sliderValue}
+                onChange={(_e, v) => setRankRange(v)}
+                valueLabelDisplay="auto"
+                disableSwap
+                sx={{ mt: -0.5 }}
+              />
+            </Box>
+          )}
           <Autocomplete
             multiple
             size="small"

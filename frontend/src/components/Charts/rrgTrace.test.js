@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { weeksAgo, buildTailPoints } from './rrgTrace';
+import { weeksAgo, buildTailPoints, filterGroups } from './rrgTrace';
 
 describe('weeksAgo', () => {
   it('is 0 for the as-of date itself', () => {
@@ -57,5 +57,32 @@ describe('buildTailPoints', () => {
 
   it('returns an empty array when there is no tail', () => {
     expect(buildTailPoints({ industry_group: 'X', quadrant: 'Lagging' }, '2024-09-29')).toEqual([]);
+  });
+});
+
+describe('filterGroups', () => {
+  const groups = [
+    { industry_group: 'A', rank: 1 },
+    { industry_group: 'B', rank: 10 },
+    { industry_group: 'C', rank: 50 },
+    { industry_group: 'D', rank: null },
+  ];
+
+  it('returns everything when no filters are active', () => {
+    expect(filterGroups(groups)).toHaveLength(4);
+    expect(filterGroups(groups, {})).toHaveLength(4);
+  });
+
+  it('filters by selected names', () => {
+    expect(filterGroups(groups, { names: ['A', 'C'] }).map((g) => g.industry_group)).toEqual(['A', 'C']);
+  });
+
+  it('filters by inclusive current-rank range and drops null ranks', () => {
+    expect(filterGroups(groups, { rankRange: [1, 10] }).map((g) => g.industry_group)).toEqual(['A', 'B']);
+    expect(filterGroups(groups, { rankRange: [10, 50] }).map((g) => g.industry_group)).toEqual(['B', 'C']);
+  });
+
+  it('combines name and rank filters with AND', () => {
+    expect(filterGroups(groups, { names: ['A', 'C'], rankRange: [1, 10] }).map((g) => g.industry_group)).toEqual(['A']);
   });
 });
