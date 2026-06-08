@@ -379,6 +379,62 @@ describe('BootstrapSetupScreen', () => {
     expect(screen.queryByText('25%')).not.toBeInTheDocument();
   });
 
+  it('uses the active secondary market for stage-local progress after the primary market completes', () => {
+    useRuntimeActivityMock.mockReturnValue({
+      data: {
+        bootstrap: {
+          primary_market: 'US',
+          current_stage: 'Price Refresh',
+          progress_mode: 'determinate',
+          percent: 100,
+          message: 'Primary market is ready while additional market loading continues.',
+          background_warning: 'Bootstrap remains active until every enabled market has a published scan.',
+        },
+        markets: [
+          {
+            market: 'US',
+            stage_key: 'scan',
+            stage_label: 'Scan',
+            status: 'completed',
+            progress_mode: 'determinate',
+            percent: 100,
+            current: 1000,
+            total: 1000,
+            message: 'Primary bootstrap complete',
+          },
+          {
+            market: 'JP',
+            stage_key: 'prices',
+            stage_label: 'Price Refresh',
+            status: 'running',
+            progress_mode: 'determinate',
+            percent: 32,
+            current: 1200,
+            total: 3750,
+            message: 'Refreshing market prices',
+          },
+        ],
+      },
+    });
+
+    renderWithProviders(
+      <BootstrapSetupScreen
+        primaryMarket="US"
+        enabledMarkets={['US', 'JP']}
+        supportedMarkets={['US', 'HK', 'JP', 'TW']}
+        bootstrapState="running"
+        isStartingBootstrap={false}
+        bootstrapError={null}
+        onStartBootstrap={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('32%')).toBeInTheDocument();
+    expect(screen.getByText('1,200 / 3,750 stocks')).toBeInTheDocument();
+    expect(screen.queryByText('100%')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Refreshing market prices/).length).toBeGreaterThan(0);
+  });
+
   it('renders Market Catalog labels while submitting Market codes', () => {
     useRuntimeActivityMock.mockReturnValue({ data: null });
     const onStartBootstrap = vi.fn().mockResolvedValue();

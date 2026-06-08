@@ -27,6 +27,7 @@ const STATUS_COLOR = {
   failed: 'error',
   idle: 'default',
 };
+const ACTIVE_MARKET_STATUSES = new Set(['running', 'queued']);
 const STAGE_LOCAL_PROGRESS_KEYS = new Set(['prices', 'fundamentals', 'scan']);
 
 function formatCount(value) {
@@ -135,11 +136,19 @@ export default function BootstrapSetupScreen({
     () => marketActivity.find((market) => market.market === (primaryMarket || selectedPrimary)) ?? marketActivity[0],
     [marketActivity, primaryMarket, selectedPrimary]
   );
-  const stageLocalProgress = resolveStageLocalProgress(primaryActivity);
+  const focusedActivity = useMemo(
+    () => (
+      marketActivity.find((market) => market.status === 'running')
+      ?? marketActivity.find((market) => ACTIVE_MARKET_STATUSES.has(market.status))
+      ?? primaryActivity
+    ),
+    [marketActivity, primaryActivity]
+  );
+  const stageLocalProgress = resolveStageLocalProgress(focusedActivity);
   const bootstrapProgressMode = (
     stageLocalProgress ? 'determinate' : (
       bootstrap?.progress_mode
-      || primaryActivity?.progress_mode
+      || focusedActivity?.progress_mode
       || 'indeterminate'
     )
   );
@@ -148,22 +157,22 @@ export default function BootstrapSetupScreen({
     bootstrap?.current,
     bootstrap?.total,
   );
-  const primaryActivityResolvedPercent = resolveDeterminatePercent(
-    primaryActivity?.percent,
-    primaryActivity?.current,
-    primaryActivity?.total,
+  const focusedActivityResolvedPercent = resolveDeterminatePercent(
+    focusedActivity?.percent,
+    focusedActivity?.current,
+    focusedActivity?.total,
   );
   const bootstrapPercent = (
     bootstrapProgressMode === 'determinate'
       ? (stageLocalProgress?.percent
+        ?? focusedActivityResolvedPercent
         ?? bootstrapResolvedPercent
-        ?? primaryActivityResolvedPercent
         ?? 0)
       : null
   );
   const bootstrapMessage = stageLocalProgress
-    ? (primaryActivity?.message || bootstrap?.message || 'Preparing primary market data.')
-    : (bootstrap?.message || primaryActivity?.message || 'Preparing primary market data.');
+    ? (focusedActivity?.message || bootstrap?.message || 'Preparing market data.')
+    : (bootstrap?.message || focusedActivity?.message || 'Preparing market data.');
 
   const toggleMarket = (market) => {
     if (market === selectedPrimary) {
@@ -242,7 +251,7 @@ export default function BootstrapSetupScreen({
                   <Stack spacing={1.5}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="subtitle2">
-                        {bootstrap?.current_stage || primaryActivity?.stage_label || 'Preparing bootstrap'}
+                        {bootstrap?.current_stage || focusedActivity?.stage_label || 'Preparing bootstrap'}
                       </Typography>
                       {bootstrapProgressMode === 'determinate' && bootstrapPercent !== null && (
                         <Typography variant="body2" color="text.secondary">
