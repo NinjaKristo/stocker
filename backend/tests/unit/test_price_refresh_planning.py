@@ -269,7 +269,7 @@ def test_build_market_price_refresh_plan_owns_universe_and_github_seed(universe_
 
 
 def test_split_supported_price_symbols_reuses_provider_no_data_policy():
-    from app.utils.symbol_support import split_supported_price_symbols
+    from app.domain.providers.price_symbol_support import split_supported_price_symbols
 
     supported, unsupported = split_supported_price_symbols(
         ["7203.T", "0123.T", "BAD-W", "AAPL"]
@@ -277,6 +277,19 @@ def test_split_supported_price_symbols_reuses_provider_no_data_policy():
 
     assert supported == ["7203.T", "AAPL"]
     assert unsupported == ["0123.T", "BAD-W"]
+
+
+def test_legacy_symbol_support_imports_reexport_domain_policy():
+    from app.domain.providers.price_symbol_support import split_supported_price_symbols
+    from app.services.price_symbol_validation import (
+        split_supported_price_symbols as service_split_supported_price_symbols,
+    )
+    from app.utils.symbol_support import (
+        split_supported_price_symbols as utils_split_supported_price_symbols,
+    )
+
+    assert service_split_supported_price_symbols is split_supported_price_symbols
+    assert utils_split_supported_price_symbols is split_supported_price_symbols
 
 
 def test_bootstrap_price_readiness_uses_price_refresh_universe_and_support_policy(

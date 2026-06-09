@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.services.price_symbol_validation import (
+from app.domain.providers.price_symbol_support import (
     is_unsupported_yahoo_price_symbol,
     split_supported_price_symbols,
 )

@@ -8,9 +8,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.domain.markets.catalog import get_market_catalog
+from app.domain.providers.price_symbol_support import split_supported_price_symbols
 from app.services.bootstrap_cache_coverage import evaluate_bootstrap_price_cache_coverage
 from app.services.price_refresh_plan_builder import load_active_price_refresh_universe
-from app.services.price_symbol_validation import split_supported_price_symbols
 
 
 def _normalize_market(market: str | None) -> str:
