@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Iterable
 
 from celery import chain
@@ -17,6 +17,8 @@ from ..domain.bootstrap.plan import (
     MarketBootstrapPlan,
     build_bootstrap_plan,
 )
+from ..services.bootstrap_cache_coverage import evaluate_bootstrap_price_cache_coverage
+from ..services.cache.price_cache_warmup import evaluate_warmup_metadata
 from ..services.market_activity_service import (
     mark_current_market_activity_failed,
     mark_market_activity_completed,
@@ -41,7 +43,6 @@ WAIT_FOR_BOOTSTRAP_PRICE_WARMUP_TASK_NAME = (
 )
 BOOTSTRAP_PRICE_WARMUP_RETRY_COUNTDOWN_SECONDS = 30
 BOOTSTRAP_PRICE_WARMUP_MAX_RETRIES = 120
-BOOTSTRAP_PRICE_WARMUP_METADATA_MAX_AGE = timedelta(hours=12)
 
 
 @dataclass(frozen=True)
@@ -170,58 +171,67 @@ def _queue_for_stage(stage) -> str:
     raise ValueError(f"Unsupported bootstrap queue kind: {stage.queue_kind}")
 
 
-def _warmup_int(metadata: dict | None, key: str) -> int | None:
-    if not metadata:
-        return None
-    value = metadata.get(key)
-    if value is None:
-        return None
+def _active_supported_price_symbols_for_market(db, *, market: str) -> list[str]:
+    from app.models.stock_universe import StockUniverse
+    from app.utils.symbol_support import split_supported_price_symbols
+
+    rows = (
+        db.query(StockUniverse.symbol)
+        .filter(StockUniverse.market == market, StockUniverse.active_filter())
+        .all()
+    )
+    symbols = [row[0] for row in rows]
+    supported_symbols, _unsupported_symbols = split_supported_price_symbols(symbols)
+    return supported_symbols
+
+
+def _coverage_int(report: dict, key: str) -> int:
+    value = report.get(key)
     try:
-        return int(value)
+        return int(value or 0)
     except (TypeError, ValueError):
-        return None
+        return 0
 
 
-def _warmup_summary(metadata: dict | None) -> str:
-    if not metadata:
-        return "missing metadata"
-    status = str(metadata.get("status") or "missing status")
-    current = _warmup_int(metadata, "count")
-    total = _warmup_int(metadata, "total")
-    if current is None and total is None:
-        return status
-    return f"{status}, {current}/{total}"
+def _coverage_ratio(report: dict) -> float:
+    value = report.get("price_coverage_ratio")
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
-def _warmup_percent(metadata: dict | None) -> float | None:
-    current = _warmup_int(metadata, "count")
-    total = _warmup_int(metadata, "total")
-    if current is None or total is None or total <= 0:
-        return None
-    return round((current / total) * 100, 4)
+def _coverage_threshold(report: dict) -> float:
+    value = report.get("threshold")
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
-def _bootstrap_price_warmup_wait_reason(metadata: dict | None) -> str | None:
-    if not metadata:
-        return "Missing price cache warmup metadata for bootstrap"
+def _bootstrap_price_coverage_wait_message(
+    report: dict,
+    *,
+    warmup_summary: str,
+) -> str:
+    covered = _coverage_int(report, "price_covered_symbols")
+    total = _coverage_int(report, "price_total_symbols")
+    return (
+        f"Waiting for price cache coverage: {covered}/{total} "
+        f"({_coverage_ratio(report):.1%}, threshold={_coverage_threshold(report):.1%}; "
+        f"warmup={warmup_summary})"
+    )
 
-    if metadata.get("status") != "completed":
-        return (
-            "Cache warmup not complete for bootstrap price run "
-            f"({_warmup_summary(metadata)})"
-        )
 
-    completed_at_raw = metadata.get("completed_at")
-    if completed_at_raw:
-        try:
-            completed_at = datetime.fromisoformat(str(completed_at_raw))
-        except ValueError:
-            return "Price cache warmup metadata timestamp is invalid"
-        now = datetime.now(completed_at.tzinfo) if completed_at.tzinfo else datetime.now()
-        if now - completed_at > BOOTSTRAP_PRICE_WARMUP_METADATA_MAX_AGE:
-            return "Price cache warmup metadata is stale for bootstrap"
-
-    return None
+def _bootstrap_price_coverage_wait_reason(market: str, report: dict) -> str:
+    covered = _coverage_int(report, "price_covered_symbols")
+    total = _coverage_int(report, "price_total_symbols")
+    missing = _coverage_int(report, "price_missing_symbols")
+    return (
+        f"Price cache coverage incomplete for {market}: {covered}/{total} "
+        f"({_coverage_ratio(report):.1%}, threshold={_coverage_threshold(report):.1%}, "
+        f"missing={missing})"
+    )
 
 
 def _build_market_bootstrap_signatures(market_plan: MarketBootstrapPlan) -> list:
@@ -271,7 +281,7 @@ def wait_for_bootstrap_price_warmup(
     market: str,
     activity_lifecycle: str | None = None,
 ) -> dict:
-    from ..wiring.bootstrap import get_price_cache
+    from ..wiring.bootstrap import get_market_calendar_service, get_price_cache
 
     market_code = normalize_market(market)
     lifecycle = activity_lifecycle or "bootstrap"
@@ -280,8 +290,22 @@ def wait_for_bootstrap_price_warmup(
     db = SessionLocal()
     try:
         warmup_metadata = get_price_cache().get_warmup_metadata(market=market_code)
-        wait_reason = _bootstrap_price_warmup_wait_reason(warmup_metadata)
-        if wait_reason is None:
+        warmup_readiness = evaluate_warmup_metadata(
+            warmup_metadata,
+            context="bootstrap price run",
+        )
+        as_of_date = get_market_calendar_service().last_completed_trading_day(market_code)
+        supported_symbols = _active_supported_price_symbols_for_market(
+            db,
+            market=market_code,
+        )
+        coverage_report = evaluate_bootstrap_price_cache_coverage(
+            db,
+            market=market_code,
+            symbols=supported_symbols,
+            as_of_date=as_of_date,
+        )
+        if coverage_report.get("eligible"):
             mark_market_activity_completed(
                 db,
                 market=market_code,
@@ -289,15 +313,17 @@ def wait_for_bootstrap_price_warmup(
                 lifecycle=lifecycle,
                 task_name=task_name,
                 task_id=task_id,
-                message="Price cache warmup ready",
+                message="Price cache coverage ready",
             )
             return {
                 "status": "ready",
                 "market": market_code,
                 "warmup": warmup_metadata,
+                "coverage": coverage_report,
             }
 
         retries = getattr(getattr(self, "request", None), "retries", 0) or 0
+        wait_reason = _bootstrap_price_coverage_wait_reason(market_code, coverage_report)
         if retries >= BOOTSTRAP_PRICE_WARMUP_MAX_RETRIES:
             mark_market_activity_failed(
                 db,
@@ -317,14 +343,17 @@ def wait_for_bootstrap_price_warmup(
             lifecycle=lifecycle,
             task_name=task_name,
             task_id=task_id,
-            percent=_warmup_percent(warmup_metadata),
-            current=_warmup_int(warmup_metadata, "count"),
-            total=_warmup_int(warmup_metadata, "total"),
-            message=f"Waiting for price cache warmup: {_warmup_summary(warmup_metadata)}",
+            percent=round(_coverage_ratio(coverage_report) * 100, 4),
+            current=_coverage_int(coverage_report, "price_covered_symbols"),
+            total=_coverage_int(coverage_report, "price_total_symbols"),
+            message=_bootstrap_price_coverage_wait_message(
+                coverage_report,
+                warmup_summary=warmup_readiness.summary,
+            ),
         )
         raise self.retry(
             exc=RuntimeError(
-                f"waiting_for_bootstrap_price_warmup:{market_code}: {wait_reason}"
+                f"waiting_for_bootstrap_price_coverage:{market_code}: {wait_reason}"
             ),
             countdown=BOOTSTRAP_PRICE_WARMUP_RETRY_COUNTDOWN_SECONDS,
             max_retries=BOOTSTRAP_PRICE_WARMUP_MAX_RETRIES,

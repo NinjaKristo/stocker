@@ -40,14 +40,14 @@ def _date_string(value: object | None) -> str | None:
     return str(value)
 
 
-def evaluate_bootstrap_cache_coverage(
+def evaluate_bootstrap_price_cache_coverage(
     db: Session,
     *,
     market: str,
     symbols: Sequence[str],
     as_of_date: date,
 ) -> dict[str, Any]:
-    """Return a JSON-ready coverage report for bootstrap cache-only eligibility."""
+    """Return bootstrap price coverage without requiring later fundamentals stages."""
     normalized_market = str(market or "US").strip().upper() or "US"
     normalized_symbols = _normalize_symbols(symbols)
     total = len(normalized_symbols)
@@ -71,6 +71,39 @@ def evaluate_bootstrap_cache_coverage(
     ]
     price_covered = total - len(price_missing)
     price_ratio = _ratio(price_covered, total)
+    threshold = BOOTSTRAP_CACHE_ONLY_MIN_COVERAGE
+
+    return {
+        "market": normalized_market,
+        "threshold": threshold,
+        "eligible": price_ratio >= threshold,
+        "mode": "price_ready" if price_ratio >= threshold else "waiting_for_prices",
+        "price_coverage_date": as_of_date.isoformat(),
+        "price_total_symbols": total,
+        "price_covered_symbols": price_covered,
+        "price_missing_symbols": len(price_missing),
+        "price_coverage_ratio": price_ratio,
+        "price_missing_symbols_preview": price_missing[:MISSING_SYMBOL_PREVIEW_LIMIT],
+    }
+
+
+def evaluate_bootstrap_cache_coverage(
+    db: Session,
+    *,
+    market: str,
+    symbols: Sequence[str],
+    as_of_date: date,
+) -> dict[str, Any]:
+    """Return a JSON-ready coverage report for bootstrap cache-only eligibility."""
+    normalized_market = str(market or "US").strip().upper() or "US"
+    normalized_symbols = _normalize_symbols(symbols)
+    total = len(normalized_symbols)
+    price_report = evaluate_bootstrap_price_cache_coverage(
+        db,
+        market=normalized_market,
+        symbols=normalized_symbols,
+        as_of_date=as_of_date,
+    )
 
     snapshot_key = WEEKLY_REFERENCE_SNAPSHOT_KEYS.get(normalized_market)
     snapshot_run = None
@@ -119,19 +152,19 @@ def evaluate_bootstrap_cache_coverage(
         fundamentals_coverage_date = _date_string(max(fundamentals_dates))
 
     threshold = BOOTSTRAP_CACHE_ONLY_MIN_COVERAGE
-    eligible = price_ratio >= threshold and fundamentals_ratio >= threshold
+    eligible = price_report["eligible"] and fundamentals_ratio >= threshold
     return {
         "market": normalized_market,
         "threshold": threshold,
         "eligible": eligible,
         "mode": "cache_only" if eligible else "fallback_existing",
-        "price_coverage_date": as_of_date.isoformat(),
+        "price_coverage_date": price_report["price_coverage_date"],
         "fundamentals_coverage_date": fundamentals_coverage_date,
-        "price_total_symbols": total,
-        "price_covered_symbols": price_covered,
-        "price_missing_symbols": len(price_missing),
-        "price_coverage_ratio": price_ratio,
-        "price_missing_symbols_preview": price_missing[:MISSING_SYMBOL_PREVIEW_LIMIT],
+        "price_total_symbols": price_report["price_total_symbols"],
+        "price_covered_symbols": price_report["price_covered_symbols"],
+        "price_missing_symbols": price_report["price_missing_symbols"],
+        "price_coverage_ratio": price_report["price_coverage_ratio"],
+        "price_missing_symbols_preview": price_report["price_missing_symbols_preview"],
         "fundamentals_total_symbols": total,
         "fundamentals_covered_symbols": fundamentals_covered,
         "fundamentals_missing_symbols": len(fundamentals_missing),
