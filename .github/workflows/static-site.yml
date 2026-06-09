@@ -2,13 +2,13 @@ name: Static Site
 
 on:
   schedule:
-    # US/EU/Americas group — after US close (unchanged).
-    - cron: '10 16 * * 1-6'
-      timezone: 'America/New_York'
+    # US/EU/Americas group — after US close. 21:10 UTC stays past the 4pm ET
+    # close in both DST states (4:10pm EST in winter, 5:10pm EDT in summer).
+    - cron: '10 21 * * 1-6'
     # Asian group — 6:30pm SGT, after all Asian markets close (incl. India,
-    # which closes 3:30pm IST = 6:00pm SGT; the 30-min buffer lets prices settle).
-    - cron: '30 18 * * 1-5'
-      timezone: 'Asia/Singapore'
+    # which closes 3:30pm IST = 6:00pm SGT; the 30-min buffer lets prices
+    # settle). Singapore has no DST, so 6:30pm SGT == 10:30 UTC year-round.
+    - cron: '30 10 * * 1-5'
   workflow_dispatch:
     inputs:
       market_group:
@@ -54,8 +54,8 @@ jobs:
 
           if [ "$EVENT_NAME" = "schedule" ]; then
             case "$SCHEDULE" in
-              '30 18 * * 1-5') markets="$ASIA" ;;   # 6:30pm SGT (Asia/Singapore)
-              *)               markets="$US" ;;     # 4:10pm ET (America/New_York)
+              '30 10 * * 1-5') markets="$ASIA" ;;   # 10:30 UTC = 6:30pm SGT
+              *)               markets="$US" ;;     # 21:10 UTC = after US close
             esac
           else
             case "$MARKET_GROUP" in
