@@ -315,6 +315,8 @@ Expected:
 
 ## Authentication Testing
 
+> **Note:** Replace `<PASSWORD>` with the value of `SERVER_AUTH_PASSWORD` from your backend `.env` file.
+
 Login:
 
 > **Note:** Replace `<PASSWORD>` with the value of `SERVER_AUTH_PASSWORD` from your backend `.env` file.
