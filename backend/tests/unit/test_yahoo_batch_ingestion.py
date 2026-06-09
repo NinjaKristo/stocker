@@ -483,7 +483,7 @@ def test_fetch_prices_in_batches_shrinks_on_attempted_transient_failures(monkeyp
             return None
 
     invalid_symbols = [f"{index:04d}.T" for index in range(1, 50)]
-    symbols = [*invalid_symbols, "7203.T", *[f"NEXT{index}" for index in range(25)]]
+    symbols = [*invalid_symbols, *[f"SYM{index}" for index in range(60)]]
 
     monkeypatch.setattr(fetcher, "_fetch_price_batch_with_retries", fake_fetch_price_batch_with_retries)
     monkeypatch.setattr(fetcher, "_rate_limiter", _StubRateLimiter())
@@ -492,7 +492,7 @@ def test_fetch_prices_in_batches_shrinks_on_attempted_transient_failures(monkeyp
         lambda: breaker,
     )
 
-    fetcher._fetch_yfinance_prices_in_batches(
+    results = fetcher._fetch_yfinance_prices_in_batches(
         symbols,
         period="2y",
         start_batch_size=50,
@@ -500,12 +500,14 @@ def test_fetch_prices_in_batches_shrinks_on_attempted_transient_failures(monkeyp
     )
 
     assert observed_batch_sizes[:2] == [50, 25]
+    assert results["0001.T"]["error_kind"] == "no_price_data"
     breaker.record_429.assert_called_once_with("yfinance", "JP")
 
 
 def test_fetch_prices_in_batches_ignores_invalid_only_batches_for_growth(monkeypatch):
     fetcher = BulkDataFetcher()
     observed_batches: list[tuple[list[str], int]] = []
+    waits: list[tuple[tuple, dict]] = []
     breaker = MagicMock()
     breaker.check.return_value = "closed"
 
@@ -535,8 +537,8 @@ def test_fetch_prices_in_batches_ignores_invalid_only_batches_for_growth(monkeyp
         def wait(*args, **kwargs):
             return None
 
-        @staticmethod
-        def wait_for_market(*args, **kwargs):
+        def wait_for_market(self, *args, **kwargs):
+            waits.append((args, kwargs))
             return None
 
     invalid_symbols = [f"{index:04d}.T" for index in range(1, 126)]
@@ -553,13 +555,16 @@ def test_fetch_prices_in_batches_ignores_invalid_only_batches_for_growth(monkeyp
         lambda: breaker,
     )
 
-    fetcher._fetch_yfinance_prices_in_batches(
+    results = fetcher._fetch_yfinance_prices_in_batches(
         [*invalid_symbols, *valid_symbols],
         period="2y",
         start_batch_size=25,
         market="JP",
     )
 
+    assert observed_batches == [(valid_symbols, 25)]
+    assert waits == []
+    assert results["0001.T"]["error_kind"] == "no_price_data"
     valid_batch_sizes = [
         batch_size
         for batch_symbols, batch_size in observed_batches

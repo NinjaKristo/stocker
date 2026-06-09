@@ -716,6 +716,12 @@ class BulkDataFetcher:
         start_batch_size: Optional[int] = None,
         market: Optional[str] = None,
     ) -> Dict[str, Dict]:
+        fetch_symbols, combined_results = self._split_fetchable_price_symbols(
+            symbols
+        )
+        if not fetch_symbols:
+            return combined_results
+
         # Per-market initial batch size from RateBudgetPolicy when caller
         # didn't pass an explicit ``start_batch_size``.
         if start_batch_size is None and market is not None:
@@ -731,9 +737,8 @@ class BulkDataFetcher:
         )
         success_streak = 0
         growth_cooldown_remaining = 0
-        combined_results: Dict[str, Dict] = {}
         batch_start = 0
-        while batch_start < len(symbols):
+        while batch_start < len(fetch_symbols):
             # Bail out early when the per-market circuit is open — no point
             # spinning through 30+ second internal retries when we know the
             # provider is throttling this market.
@@ -741,16 +746,18 @@ class BulkDataFetcher:
                 logger.warning(
                     "Yahoo circuit open for market=%s; aborting price fetch "
                     "(remaining %d/%d symbols)",
-                    market, len(symbols) - batch_start, len(symbols),
+                    market,
+                    len(fetch_symbols) - batch_start,
+                    len(fetch_symbols),
                 )
-                for symbol in symbols[batch_start:]:
+                for symbol in fetch_symbols[batch_start:]:
                     combined_results.setdefault(
                         symbol,
                         {**self._build_error_result(symbol, "circuit_open"), "error_kind": "circuit_open"},
                     )
                 break
 
-            batch_symbols = symbols[batch_start:batch_start + batch_size]
+            batch_symbols = fetch_symbols[batch_start:batch_start + batch_size]
             batch_results = self._fetch_price_batch_with_retries(
                 batch_symbols,
                 period=period,
@@ -783,7 +790,7 @@ class BulkDataFetcher:
                 else:
                     success_streak = 0
 
-            if batch_start + len(batch_symbols) < len(symbols):
+            if batch_start + len(batch_symbols) < len(fetch_symbols):
                 # Per-market batch interval when market is supplied; falls
                 # back to the legacy global key for shared/unmarked calls.
                 if market is not None:
