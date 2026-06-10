@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 import app.services.static_site_export_service as export_module
@@ -1757,6 +1758,31 @@ def test_build_groups_rrg_payload_emits_available_scopes(service_and_session_fac
 
     assert payload["available_scopes"] == ["groups"]
     assert payload["payload"]["groups"]["groups"][0]["industry_group"] == "Internet Services"
+
+
+def test_build_groups_rrg_payload_propagates_non_missing_table_sql_errors(
+    service_and_session_factory,
+    monkeypatch,
+):
+    service, session_factory = service_and_session_factory
+
+    class _FakeRRGService:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            self.kwargs = kwargs
+
+        def get_rrg_scopes(self, db, *, market, scopes):  # noqa: ARG002
+            raise SQLAlchemyError("connection failed")
+
+    monkeypatch.setattr(export_module, "RRGService", _FakeRRGService)
+    monkeypatch.setattr(export_module, "get_group_rank_service", lambda: SimpleNamespace())
+
+    with session_factory() as db, pytest.raises(SQLAlchemyError, match="connection failed"):
+        service._build_groups_rrg_payload(  # noqa: SLF001
+            db=db,
+            generated_at="2026-04-18T22:00:00Z",
+            expected_as_of_date=date(2026, 4, 18),
+            market="HK",
+        )
 
 
 def test_export_chart_bundle_writes_top_ranked_payloads_with_sidebar_metadata(

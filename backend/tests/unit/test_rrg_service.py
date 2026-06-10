@@ -206,6 +206,43 @@ def test_get_rrg_non_us_uses_feature_run_history_provider():
     assert [g["industry_group"] for g in payload["groups"]] == ["Internet Services"]
 
 
+def test_get_rrg_uses_injected_history_provider_for_all_markets():
+    session = _session()
+    dates = _weekly_fridays(40)
+    calls: list[tuple[str, int]] = []
+
+    class _FakeHistoryProvider:
+        def get_all_groups_history(self, db, *, market, days):  # noqa: ARG002
+            calls.append((market, days))
+            latest = dates[-1].isoformat()
+            return (
+                latest,
+                {
+                    "Internet Services": {
+                        "industry_group": "Internet Services",
+                        "date": latest,
+                        "rank": 1,
+                        "num_stocks": 9,
+                        "avg_rs_rating": 80.0,
+                    }
+                },
+                {
+                    "Internet Services": [
+                        (d, 40.0 + index, 9)
+                        for index, d in enumerate(dates)
+                    ]
+                },
+            )
+
+    payload = RRGService(
+        group_rank_service=_ExplodingRankService(),
+        history_provider=_FakeHistoryProvider(),
+    ).get_rrg(session, market="HK", lookback_days=123)
+
+    assert calls == [("HK", 123)]
+    assert [group["industry_group"] for group in payload["groups"]] == ["Internet Services"]
+
+
 def test_get_rrg_disabled_non_us_market_returns_empty_without_history_lookup():
     session = _session()
 

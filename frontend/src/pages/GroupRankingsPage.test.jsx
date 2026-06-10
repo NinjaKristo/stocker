@@ -22,18 +22,18 @@ const runtimeState = {
   supportedMarkets: ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'],
   marketCatalog: {
     markets: [
-      { code: 'US', label: 'United States', capabilities: { group_rankings: true } },
-      { code: 'HK', label: 'Hong Kong', capabilities: { group_rankings: true } },
-      { code: 'IN', label: 'India', capabilities: { group_rankings: true } },
-      { code: 'JP', label: 'Japan', capabilities: { group_rankings: true } },
-      { code: 'KR', label: 'South Korea', capabilities: { group_rankings: true } },
-      { code: 'TW', label: 'Taiwan', capabilities: { group_rankings: true } },
-      { code: 'CN', label: 'China A-shares', capabilities: { group_rankings: true } },
-      { code: 'CA', label: 'Canada', capabilities: { group_rankings: true } },
-      { code: 'DE', label: 'Germany', capabilities: { group_rankings: false } },
-      { code: 'SG', label: 'Singapore', capabilities: { group_rankings: false } },
-      { code: 'AU', label: 'Australia', capabilities: { group_rankings: false } },
-      { code: 'MY', label: 'Malaysia', capabilities: { group_rankings: false } },
+      { code: 'US', label: 'United States', capabilities: { group_rankings: true, rrg_groups: true, rrg_sectors: true } },
+      { code: 'HK', label: 'Hong Kong', capabilities: { group_rankings: true, rrg_groups: true, rrg_sectors: true } },
+      { code: 'IN', label: 'India', capabilities: { group_rankings: true, rrg_groups: true, rrg_sectors: true } },
+      { code: 'JP', label: 'Japan', capabilities: { group_rankings: true, rrg_groups: true, rrg_sectors: true } },
+      { code: 'KR', label: 'South Korea', capabilities: { group_rankings: true, rrg_groups: false, rrg_sectors: false } },
+      { code: 'TW', label: 'Taiwan', capabilities: { group_rankings: true, rrg_groups: true, rrg_sectors: false } },
+      { code: 'CN', label: 'China A-shares', capabilities: { group_rankings: true, rrg_groups: false, rrg_sectors: false } },
+      { code: 'CA', label: 'Canada', capabilities: { group_rankings: true, rrg_groups: false, rrg_sectors: false } },
+      { code: 'DE', label: 'Germany', capabilities: { group_rankings: false, rrg_groups: false, rrg_sectors: false } },
+      { code: 'SG', label: 'Singapore', capabilities: { group_rankings: false, rrg_groups: false, rrg_sectors: false } },
+      { code: 'AU', label: 'Australia', capabilities: { group_rankings: false, rrg_groups: false, rrg_sectors: false } },
+      { code: 'MY', label: 'Malaysia', capabilities: { group_rankings: false, rrg_groups: false, rrg_sectors: false } },
     ],
   },
 };
@@ -239,6 +239,17 @@ describe('GroupRankingsPage', () => {
     });
     expect(await screen.findByText(/Relative Rotation Graph/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sectors' })).not.toBeInTheDocument();
+  });
+
+  it('hides RRG for group-ranking markets without RRG capability', async () => {
+    runtimeState.primaryMarket = 'KR';
+    runtimeState.enabledMarkets = ['KR'];
+
+    renderWithProviders(<GroupRankingsPage />);
+
+    expect(await screen.findByText('KR Internet Services')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'RRG' })).not.toBeInTheDocument();
+    expect(getRRGBundle).not.toHaveBeenCalled();
   });
 
   it('loads batch price history when the Charts tab is opened in the group modal', async () => {

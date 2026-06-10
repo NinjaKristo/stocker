@@ -1,3 +1,5 @@
+import { marketCapabilityValue } from './marketCapabilities';
+
 export const RRG_SCOPE_LABELS = {
   groups: 'Groups',
   sectors: 'Sectors',
@@ -30,4 +32,21 @@ export const availableRrgScopesFromBundle = (bundle) => {
     RRG_SCOPE_ORDER.filter((scope) => (bundle.payload?.[scope]?.groups ?? []).length > 0),
     [],
   );
+};
+
+export const rrgScopesForMarket = (marketCatalog, market) => {
+  const groupCapable = marketCapabilityValue(marketCatalog, market, 'rrg_groups');
+  const sectorCapable = marketCapabilityValue(marketCatalog, market, 'rrg_sectors');
+  if (groupCapable === null && sectorCapable === null) {
+    return RRG_SCOPE_ORDER;
+  }
+
+  const scopes = [];
+  if (groupCapable) {
+    scopes.push('groups');
+  }
+  if (sectorCapable) {
+    scopes.push('sectors');
+  }
+  return scopes;
 };

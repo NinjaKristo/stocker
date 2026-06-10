@@ -85,6 +85,23 @@ STATIC_DEFAULT_SCAN_FILTERS_BY_MARKET: dict[str, dict[str, int | None]] = {
 STATIC_DEFAULT_SCAN_FILTERS_FALLBACK: dict[str, int | None] = {"minVolume": None}
 
 
+def _is_missing_table_sql_error(exc: SQLAlchemyError) -> bool:
+    parts = [str(exc)]
+    orig = getattr(exc, "orig", None)
+    if orig is not None:
+        parts.append(str(orig))
+    message = " ".join(parts).lower()
+    return any(
+        marker in message
+        for marker in (
+            "no such table",
+            "does not exist",
+            "undefined table",
+            "unknown table",
+        )
+    )
+
+
 STATIC_CHART_PRESET_TOP_N = 200
 STATIC_CHART_TOP_N_GROUPS = 50
 STATIC_GROUP_DETAIL_HISTORY_DAYS = 100
@@ -553,6 +570,8 @@ class StaticSiteExportService:
         try:
             scopes = service.get_rrg_scopes(db, market=market, scopes=("groups", "sectors"))
         except SQLAlchemyError as exc:
+            if not _is_missing_table_sql_error(exc):
+                raise
             raise StaticSiteSectionUnavailableError(
                 section=f"{market} rrg",
                 reason="RRG source tables are unavailable for this export database.",

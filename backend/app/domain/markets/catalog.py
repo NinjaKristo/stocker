@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from typing import Iterable
 
 from .mic import MicFacts
@@ -20,6 +20,8 @@ class MarketCapabilities:
     breadth: bool
     fundamentals: bool
     group_rankings: bool
+    rrg_groups: bool
+    rrg_sectors: bool
     feature_snapshot: bool
     official_universe: bool
     finviz_screening: bool
@@ -174,14 +176,27 @@ class MarketCatalog:
         }
 
 
-FULL_CAPABILITIES = MarketCapabilities(
+GROUP_RANKING_CAPABILITIES = MarketCapabilities(
     benchmark=True,
     breadth=True,
     fundamentals=True,
     group_rankings=True,
+    rrg_groups=False,
+    rrg_sectors=False,
     feature_snapshot=True,
     official_universe=True,
     finviz_screening=False,
+)
+
+RRG_GROUP_AND_SECTOR_CAPABILITIES = replace(
+    GROUP_RANKING_CAPABILITIES,
+    rrg_groups=True,
+    rrg_sectors=True,
+)
+
+RRG_GROUP_ONLY_CAPABILITIES = replace(
+    GROUP_RANKING_CAPABILITIES,
+    rrg_groups=True,
 )
 
 
@@ -265,6 +280,8 @@ MARKET_CATALOG = MarketCatalog(
                 breadth=True,
                 fundamentals=True,
                 group_rankings=True,
+                rrg_groups=True,
+                rrg_sectors=True,
                 feature_snapshot=True,
                 official_universe=False,
                 finviz_screening=True,
@@ -282,7 +299,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("HKEX", "SEHK", "XHKG"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=RRG_GROUP_AND_SECTOR_CAPABILITIES,
         ),
         _market_entry(
             code="IN",
@@ -302,7 +319,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("NSE", "XNSE", "BSE", "XBOM"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=RRG_GROUP_AND_SECTOR_CAPABILITIES,
         ),
         _market_entry(
             code="JP",
@@ -316,7 +333,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("TSE", "JPX", "XTKS"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=RRG_GROUP_AND_SECTOR_CAPABILITIES,
         ),
         _market_entry(
             code="KR",
@@ -330,7 +347,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("KOSPI", "KOSDAQ", "KRX", "XKRX"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=GROUP_RANKING_CAPABILITIES,
         ),
         _market_entry(
             code="TW",
@@ -344,7 +361,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("TWSE", "TPEX", "XTAI"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=RRG_GROUP_ONLY_CAPABILITIES,
         ),
         _market_entry(
             code="CN",
@@ -368,7 +385,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("SSE", "SZSE", "BJSE", "XSHG", "XSHE", "XBSE"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=GROUP_RANKING_CAPABILITIES,
         ),
         _market_entry(
             code="CA",
@@ -387,7 +404,7 @@ MARKET_CATALOG = MarketCatalog(
                 ),
             ),
             exchanges=("TSX", "TSXV", "XTSE", "XTNX"),
-            capabilities=FULL_CAPABILITIES,
+            capabilities=GROUP_RANKING_CAPABILITIES,
         ),
         _market_entry(
             code="DE",
@@ -411,6 +428,8 @@ MARKET_CATALOG = MarketCatalog(
                 breadth=True,
                 fundamentals=True,
                 group_rankings=False,
+                rrg_groups=False,
+                rrg_sectors=False,
                 feature_snapshot=True,
                 official_universe=True,
                 finviz_screening=False,
@@ -433,6 +452,8 @@ MARKET_CATALOG = MarketCatalog(
                 breadth=False,
                 fundamentals=True,
                 group_rankings=False,
+                rrg_groups=False,
+                rrg_sectors=False,
                 feature_snapshot=True,
                 official_universe=True,
                 finviz_screening=False,
@@ -455,6 +476,8 @@ MARKET_CATALOG = MarketCatalog(
                 breadth=False,
                 fundamentals=True,
                 group_rankings=False,
+                rrg_groups=False,
+                rrg_sectors=False,
                 feature_snapshot=True,
                 official_universe=True,
                 finviz_screening=False,
@@ -477,6 +500,8 @@ MARKET_CATALOG = MarketCatalog(
                 breadth=False,
                 fundamentals=True,
                 group_rankings=False,
+                rrg_groups=False,
+                rrg_sectors=False,
                 feature_snapshot=True,
                 official_universe=True,
                 finviz_screening=False,

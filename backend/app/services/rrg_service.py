@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from app.domain.markets.catalog import get_market_catalog
+
 # ---------------------------------------------------------------------------
 # Tunable constants (module-level so they can be adjusted without touching the
 # call sites and so tests can reference them by name).
@@ -52,8 +54,13 @@ EPS = 1e-6
 DEFAULT_TAIL_WEEKS = 8
 DEFAULT_LOOKBACK_DAYS = 400  # enough daily rows to build Z_WINDOW + tail weeks
 
-RRG_GROUPS_ENABLED_MARKETS = frozenset({"US", "HK", "JP", "IN", "TW"})
-RRG_SECTORS_ENABLED_MARKETS = frozenset({"US", "HK", "JP", "IN"})
+
+def _market_codes_with_rrg_capability(capability: str) -> frozenset[str]:
+    return frozenset(get_market_catalog().market_codes_with_capability(capability))
+
+
+RRG_GROUPS_ENABLED_MARKETS = _market_codes_with_rrg_capability("rrg_groups")
+RRG_SECTORS_ENABLED_MARKETS = _market_codes_with_rrg_capability("rrg_sectors")
 
 
 @dataclass(frozen=True)
@@ -244,10 +251,12 @@ class RRGService:
         group_rank_service: Any,
         market_group_ranking_service: Any | None = None,
         taxonomy_service: Any | None = None,
+        history_provider: Any | None = None,
     ) -> None:
         self._group_rank_service = group_rank_service
         self._market_group_ranking_service = market_group_ranking_service
         self._taxonomy_service = taxonomy_service
+        self._history_provider = history_provider
 
     def _get_market_group_ranking_service(self) -> Any:
         if self._market_group_ranking_service is None:
@@ -262,6 +271,22 @@ class RRGService:
 
             self._taxonomy_service = get_market_taxonomy_service()
         return self._taxonomy_service
+
+    def _get_history_provider(self) -> Any:
+        if self._history_provider is None:
+            from .rrg_history_provider import (
+                CompositeRRGHistoryProvider,
+                FeatureRunGroupRankHistoryProvider,
+                USGroupRankHistoryProvider,
+            )
+
+            self._history_provider = CompositeRRGHistoryProvider(
+                us_provider=USGroupRankHistoryProvider(self._group_rank_service),
+                feature_run_provider=FeatureRunGroupRankHistoryProvider(
+                    self._get_market_group_ranking_service()
+                ),
+            )
+        return self._history_provider
 
     def get_group_sector_map(self, db: Any, market: str = "US") -> Dict[str, str]:
         """Map each IBD industry group -> its constituents' dominant GICS sector.
@@ -367,48 +392,11 @@ class RRGService:
         Dict[str, List[Tuple[date, float, int]]],
     ]:
         """Read the current rankings (metadata) + batched group history (one query)."""
-        if market != "US":
-            return self._get_market_group_ranking_service().get_all_groups_history(
-                db,
-                market=market,
-                days=lookback_days,
-            )
-
-        return self._fetch_us_inputs(db, market, lookback_days)
-
-    def _fetch_us_inputs(
-        self, db: Any, market: str, lookback_days: int
-    ) -> Tuple[
-        Optional[str],
-        Dict[str, Dict[str, Any]],
-        Dict[str, List[Tuple[date, float, int]]],
-    ]:
-        from datetime import date as _date
-
-        from ..models.industry import IBDGroupRank
-
-        current = self._group_rank_service.get_current_rankings(
-            db, limit=197, market=market
+        return self._get_history_provider().get_all_groups_history(
+            db,
+            market=market,
+            days=lookback_days,
         )
-        if not current:
-            return None, {}, {}
-
-        latest_date = current[0]["date"]  # ISO string
-        meta = {row["industry_group"]: row for row in current}
-
-        cutoff = _date.fromisoformat(latest_date) - timedelta(days=lookback_days)
-        rows = (
-            db.query(
-                IBDGroupRank.industry_group,
-                IBDGroupRank.date,
-                IBDGroupRank.avg_rs_rating,
-                IBDGroupRank.num_stocks,
-            )
-            .filter(IBDGroupRank.market == market, IBDGroupRank.date >= cutoff)
-            .order_by(IBDGroupRank.industry_group, IBDGroupRank.date)
-            .all()
-        )
-        return latest_date, meta, self._collect_group_series(rows)
 
     def _build_scope_payload(
         self,
@@ -458,17 +446,6 @@ class RRGService:
             "scope": scope,
             "groups": groups_out,
         }
-
-    @staticmethod
-    def _collect_group_series(
-        rows: Sequence[Tuple[str, date, float, Optional[int]]],
-    ) -> Dict[str, List[Tuple[date, float, int]]]:
-        from collections import defaultdict
-
-        series: dict[str, List[Tuple[date, float, int]]] = defaultdict(list)
-        for group, d, rs, ns in rows:
-            series[group].append((d, float(rs), int(ns or 0)))
-        return series
 
     def _aggregate_sectors(
         self,

@@ -41,6 +41,8 @@ class MarketCapabilitiesResponse(BaseModel):
     breadth: bool = False
     fundamentals: bool = False
     group_rankings: bool = False
+    rrg_groups: bool = False
+    rrg_sectors: bool = False
     feature_snapshot: bool = False
     official_universe: bool = False
     finviz_screening: bool = False

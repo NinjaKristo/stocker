@@ -41,7 +41,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 _market_catalog = get_market_catalog()
 SUPPORTED_GROUP_MARKETS = _market_catalog.market_codes_with_capability("group_rankings")
+SUPPORTED_RRG_GROUP_MARKETS = _market_catalog.market_codes_with_capability("rrg_groups")
+SUPPORTED_RRG_SECTOR_MARKETS = _market_catalog.market_codes_with_capability("rrg_sectors")
 MARKET_QUERY_DESCRIPTION = "Market code: " + ", ".join(SUPPORTED_GROUP_MARKETS)
+RRG_MARKET_QUERY_DESCRIPTION = "RRG market code: " + ", ".join(SUPPORTED_RRG_GROUP_MARKETS)
 DEFAULT_GROUP_PERIOD = "1w"
 
 
@@ -69,6 +72,19 @@ def _normalize_market_param(market: str | None) -> str:
             detail=(
                 f"Unsupported market '{market}'. Expected one of: "
                 f"{', '.join(SUPPORTED_GROUP_MARKETS)}."
+            ),
+        )
+    return normalized
+
+
+def _normalize_rrg_market_param(market: str | None) -> str:
+    normalized = str(market or "US").strip().upper()
+    if normalized not in SUPPORTED_RRG_GROUP_MARKETS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported RRG market '{market}'. Expected one of: "
+                f"{', '.join(SUPPORTED_RRG_GROUP_MARKETS)}."
             ),
         )
     return normalized
@@ -175,11 +191,11 @@ def _build_rrg_response(
 async def get_rrg_scopes(
     tail_weeks: int = Query(8, ge=2, le=20, description="Number of weekly tail points"),
     limit: int = Query(197, ge=1, le=197, description="Top-N series by rank"),
-    market: str = Query("US", description=MARKET_QUERY_DESCRIPTION),
+    market: str = Query("US", description=RRG_MARKET_QUERY_DESCRIPTION),
     db: Session = Depends(get_db),
 ):
     """Relative Rotation Graph coordinates for all scopes available to a market."""
-    normalized_market = _normalize_market_param(market)
+    normalized_market = _normalize_rrg_market_param(market)
     service = _get_rrg_service()
     scopes = service.get_rrg_scopes(
         db,
@@ -228,7 +244,7 @@ async def get_rrg(
         "groups", pattern="^(groups|sectors)$", description="groups or sectors"
     ),
     limit: int = Query(197, ge=1, le=197, description="Top-N series by rank"),
-    market: str = Query("US", description=MARKET_QUERY_DESCRIPTION),
+    market: str = Query("US", description=RRG_MARKET_QUERY_DESCRIPTION),
     db: Session = Depends(get_db),
 ):
     """Relative Rotation Graph coordinates for IBD groups (or GICS-sector roll-ups).
@@ -237,7 +253,15 @@ async def get_rrg(
     tail tracing its path through the Leading/Weakening/Lagging/Improving
     quadrants. Math is computed server-side (see ``services/rrg_service.py``).
     """
-    normalized_market = _normalize_market_param(market)
+    normalized_market = _normalize_rrg_market_param(market)
+    if scope == "sectors" and normalized_market not in SUPPORTED_RRG_SECTOR_MARKETS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported RRG scope 'sectors' for market '{market}'. "
+                f"Expected one of: {', '.join(SUPPORTED_RRG_SECTOR_MARKETS)}."
+            ),
+        )
     service = _get_rrg_service()
     payload = service.get_rrg(
         db, market=normalized_market, scope=scope, tail_weeks=tail_weeks

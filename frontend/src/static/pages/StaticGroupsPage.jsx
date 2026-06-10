@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -24,10 +24,10 @@ import { useStaticChartIndex } from '../chartClient';
 import StaticGroupDetailModal from '../StaticGroupDetailModal';
 import RRGChart from '../../components/Charts/RRGChart';
 import RRGViewToggle from '../../components/Charts/RRGViewToggle';
+import { useRRGScopeSelection } from '../../components/Charts/useRRGScopeSelection';
 import RankChangeCell from '../../components/shared/RankChangeCell';
 import TickerCell from '../../components/common/TickerCell';
 import { useStaticMarket } from '../StaticMarketContext';
-import { availableRrgScopesFromBundle } from '../../utils/rrgScopes';
 
 function MoversCard({ title, rows }) {
   return (
@@ -144,31 +144,17 @@ function StaticGroupsPage() {
   const chartIndexQuery = useStaticChartIndex(marketEntry.assets?.charts?.path);
   const rrgQuery = useStaticGroupsRRG(marketEntry);
   const rrgAvailable = Boolean(marketEntry.assets?.groups_rrg?.path);
-  const availableRrgScopes = useMemo(() => availableRrgScopesFromBundle(rrgQuery.data), [rrgQuery.data]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [view, setView] = useState('table'); // 'table' | 'rrg'
   const [rrgScope, setRrgScope] = useState('groups'); // 'groups' | 'sectors'
-
-  // Markets without an RRG bundle hide the toggle, so never strand the page in
-  // the RRG branch with no way back to the table.
-  useEffect(() => {
-    if (!rrgAvailable && view !== 'table') {
-      setView('table');
-    }
-  }, [rrgAvailable, view]);
-
-  useEffect(() => {
-    if (!availableRrgScopes || view !== 'rrg') {
-      return;
-    }
-    if (availableRrgScopes.length === 0) {
-      setView('table');
-      return;
-    }
-    if (!availableRrgScopes.includes(rrgScope)) {
-      setRrgScope(availableRrgScopes[0]);
-    }
-  }, [availableRrgScopes, rrgScope, view]);
+  const { availableScopes: availableRrgScopes } = useRRGScopeSelection({
+    view,
+    scope: rrgScope,
+    setView,
+    setScope: setRrgScope,
+    rrgAvailable,
+    bundle: rrgQuery.data,
+  });
 
   if (manifestQuery.isLoading || groupsQuery.isLoading) {
     return (
@@ -207,6 +193,7 @@ function StaticGroupsPage() {
           onView={setView}
           scope={rrgScope}
           onScope={setRrgScope}
+          rrgAvailable={rrgAvailable}
           availableScopes={availableRrgScopes}
           sx={{ mb: 2 }}
         />

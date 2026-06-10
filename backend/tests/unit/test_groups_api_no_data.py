@@ -348,3 +348,24 @@ async def test_get_rrg_scopes_returns_bundle_with_available_scopes(monkeypatch, 
     assert payload["payload"]["groups"]["total_groups"] == 1
     assert payload["payload"]["sectors"]["total_groups"] == 0
     assert payload["payload"]["groups"]["market_scope"] == "HK"
+
+
+@pytest.mark.asyncio
+async def test_get_rrg_scopes_rejects_group_rank_market_without_rrg_capability(monkeypatch, client):
+    from app.services import server_auth
+
+    monkeypatch.setattr(server_auth.settings, "server_auth_enabled", False)
+
+    class _FakeRRGService:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            self.kwargs = kwargs
+
+        def get_rrg_scopes(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return {"groups": {"groups": []}, "sectors": {"groups": []}}
+
+    monkeypatch.setattr("app.api.v1.groups.RRGService", _FakeRRGService)
+
+    response = await client.get("/api/v1/groups/rrg/scopes", params={"market": "KR"})
+
+    assert response.status_code == 400
+    assert "Unsupported RRG market" in response.json()["detail"]

@@ -413,6 +413,12 @@ def test_endpoint_capability_allowlists_match_catalog_capabilities() -> None:
     assert groups.SUPPORTED_GROUP_MARKETS == _catalog_market_codes_by_capability(
         "group_rankings"
     )
+    assert groups.SUPPORTED_RRG_GROUP_MARKETS == _catalog_market_codes_by_capability(
+        "rrg_groups"
+    )
+    assert groups.SUPPORTED_RRG_SECTOR_MARKETS == _catalog_market_codes_by_capability(
+        "rrg_sectors"
+    )
     assert scans.SUPPORTED_SCAN_REFRESH_MARKETS == _catalog_market_codes_by_capability(
         "feature_snapshot"
     )
@@ -464,6 +470,16 @@ def test_endpoint_capability_allowlists_are_catalog_queries_not_local_lists() ->
         groups,
         "SUPPORTED_GROUP_MARKETS",
         "group_rankings",
+    )
+    _assert_allowlist_assigned_from_capability_query(
+        groups,
+        "SUPPORTED_RRG_GROUP_MARKETS",
+        "rrg_groups",
+    )
+    _assert_allowlist_assigned_from_capability_query(
+        groups,
+        "SUPPORTED_RRG_SECTOR_MARKETS",
+        "rrg_sectors",
     )
     _assert_allowlist_assigned_from_capability_query(
         scans,
