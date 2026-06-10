@@ -15,11 +15,12 @@ from app.models.provider_snapshot import (
 )
 from app.models.stock import StockFundamental, StockPrice
 from app.services.bootstrap_cache_coverage import (
+    BootstrapCacheCoverageReport,
     BootstrapPriceCoverageReport,
-    bootstrap_fundamentals_min_coverage_for_market,
-    bootstrap_price_min_coverage_for_market,
+    bootstrap_coverage_policy_for_market,
     evaluate_bootstrap_cache_coverage,
     evaluate_bootstrap_price_cache_coverage,
+    normalize_bootstrap_gate_report,
 )
 from app.domain.markets.catalog import get_market_catalog
 
@@ -233,6 +234,62 @@ def test_bootstrap_cache_coverage_keeps_fundamentals_threshold_strict_for_partia
     assert report["eligible"] is False
 
 
+def test_bootstrap_cache_report_uses_price_threshold_as_compatibility_alias_without_duplicate_state():
+    assert "threshold" not in BootstrapCacheCoverageReport.__dataclass_fields__
+
+    db = _session()
+    symbols = [f"SYM{i}" for i in range(20)]
+    as_of = date(2026, 4, 24)
+    db.add_all([_price(symbol, as_of) for symbol in symbols[:11]])
+    db.add_all(
+        [
+            _fundamental(symbol, datetime(2026, 4, 21, tzinfo=timezone.utc))
+            for symbol in symbols
+        ]
+    )
+    db.commit()
+
+    report = evaluate_bootstrap_cache_coverage(
+        db,
+        market="TW",
+        symbols=symbols,
+        as_of_date=as_of,
+    )
+
+    assert report["threshold"] == report["price_threshold"] == 0.50
+    assert report["fundamentals_threshold"] == 0.95
+
+
+def test_normalize_bootstrap_gate_report_owns_threshold_and_unsupported_metadata():
+    report = normalize_bootstrap_gate_report(
+        market="TW",
+        report={
+            "eligible": True,
+            "price_coverage_ratio": 0.55,
+            "fundamentals_coverage_ratio": 1.0,
+        },
+        unsupported_symbols=["1234.BAD", "5678.BAD"],
+    )
+
+    assert report["threshold"] == report["price_threshold"] == 0.50
+    assert report["fundamentals_threshold"] == 0.95
+    assert report["mode"] == "cache_only"
+    assert report["unsupported_skipped_count"] == 2
+    assert report["unsupported_symbols_preview"] == ["1234.BAD", "5678.BAD"]
+
+
+def test_normalize_bootstrap_gate_report_hides_unsupported_symbols_until_gate_passes():
+    report = normalize_bootstrap_gate_report(
+        market="TW",
+        report={"eligible": False},
+        unsupported_symbols=["1234.BAD"],
+    )
+
+    assert report["mode"] == "waiting_for_cache_coverage"
+    assert report["unsupported_skipped_count"] == 0
+    assert report["unsupported_symbols_preview"] == []
+
+
 def test_bootstrap_price_thresholds_cover_every_supported_market():
     expected_price_thresholds = {
         "AU": 0.90,
@@ -254,11 +311,11 @@ def test_bootstrap_price_thresholds_cover_every_supported_market():
     )
 
     for market, expected_threshold in expected_price_thresholds.items():
-        price_threshold = bootstrap_price_min_coverage_for_market(market)
-        fundamentals_threshold = bootstrap_fundamentals_min_coverage_for_market(market)
+        policy = bootstrap_coverage_policy_for_market(market)
 
-        assert price_threshold == expected_threshold, market
-        assert fundamentals_threshold == 0.95, market
+        assert policy.market == market
+        assert policy.price_min_coverage == expected_threshold, market
+        assert policy.fundamentals_min_coverage == 0.95, market
 
 
 def test_bootstrap_price_cache_coverage_rejects_empty_candidate_set():

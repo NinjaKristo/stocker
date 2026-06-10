@@ -52,10 +52,8 @@ from app.domain.scanning.ports import (
     StockScanner,
 )
 from app.services.bootstrap_cache_coverage import (
-    BOOTSTRAP_CACHE_ONLY_MIN_FUNDAMENTALS_COVERAGE,
-    MISSING_SYMBOL_PREVIEW_LIMIT,
-    bootstrap_price_min_coverage_for_market,
     evaluate_bootstrap_cache_coverage,
+    normalize_bootstrap_gate_report,
 )
 from app.domain.providers.price_symbol_support import split_supported_price_symbols
 from app.use_cases.feature_store.publish_run import (
@@ -373,36 +371,12 @@ class BuildDailyFeatureSnapshotUseCase:
                     )
                 elif not bootstrap_gate_report:
                     bootstrap_gate_report = {"eligible": False}
+                bootstrap_gate_report = normalize_bootstrap_gate_report(
+                    market=cmd.market,
+                    report=bootstrap_gate_report,
+                    unsupported_symbols=unsupported_symbols,
+                )
                 eligible = bool(bootstrap_gate_report.get("eligible"))
-                price_threshold = float(
-                    bootstrap_gate_report.get("price_threshold")
-                    or bootstrap_gate_report.get("threshold")
-                    or bootstrap_price_min_coverage_for_market(cmd.market)
-                )
-                fundamentals_threshold = float(
-                    bootstrap_gate_report.get("fundamentals_threshold")
-                    or BOOTSTRAP_CACHE_ONLY_MIN_FUNDAMENTALS_COVERAGE
-                )
-                bootstrap_gate_report.update(
-                    {
-                        "threshold": price_threshold,
-                        "price_threshold": price_threshold,
-                        "fundamentals_threshold": fundamentals_threshold,
-                        "mode": (
-                            "cache_only"
-                            if eligible
-                            else "waiting_for_cache_coverage"
-                        ),
-                        "unsupported_skipped_count": (
-                            len(unsupported_symbols) if eligible else 0
-                        ),
-                        "unsupported_symbols_preview": (
-                            unsupported_symbols[:MISSING_SYMBOL_PREVIEW_LIMIT]
-                            if eligible
-                            else []
-                        ),
-                    }
-                )
                 if eligible:
                     if not supported_symbols:
                         raise ValidationError(
