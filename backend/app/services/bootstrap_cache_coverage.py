@@ -19,17 +19,49 @@ from app.models.stock import StockFundamental, StockPrice
 from app.services.provider_snapshot_service import WEEKLY_REFERENCE_SNAPSHOT_KEYS
 
 BOOTSTRAP_CACHE_ONLY_MIN_COVERAGE = 0.95
+BOOTSTRAP_CACHE_ONLY_MIN_FUNDAMENTALS_COVERAGE = 0.95
+# Price coverage thresholds are aligned to observed daily-price static bundle
+# availability, rounded down to conservative 5-point floors. They gate whether
+# bootstrap can build a cache-only snapshot without falling back to live fetches.
+BOOTSTRAP_PRICE_MIN_COVERAGE_BY_MARKET: dict[str, float] = {
+    "AU": 0.90,
+    "CA": 0.75,
+    "CN": 0.90,
+    "DE": 0.90,
+    "HK": 0.80,
+    "IN": 0.50,
+    "JP": 0.90,
+    "KR": 0.95,
+    "MY": 0.85,
+    "SG": 0.60,
+    "TW": 0.50,
+    "US": 0.95,
+}
 MISSING_SYMBOL_PREVIEW_LIMIT = 20
 
 
 @dataclass(frozen=True)
-class BootstrapPriceCoverageReport(Mapping[str, Any]):
+class BootstrapCoveragePolicy:
     market: str
-    threshold: float
+    price_min_coverage: float
+    fundamentals_min_coverage: float
+
+
+@dataclass(frozen=True)
+class BootstrapPriceCoverageReport(Mapping[str, Any]):
+    policy: BootstrapCoveragePolicy
     price_coverage_date: date | str
     price_total_symbols: int
     price_covered_symbols: int
     price_missing_symbols: tuple[str, ...]
+
+    @property
+    def market(self) -> str:
+        return self.policy.market
+
+    @property
+    def threshold(self) -> float:
+        return self.policy.price_min_coverage
 
     @property
     def price_missing_symbol_count(self) -> int:
@@ -75,13 +107,27 @@ class BootstrapPriceCoverageReport(Mapping[str, Any]):
 
 @dataclass(frozen=True)
 class BootstrapCacheCoverageReport(Mapping[str, Any]):
-    market: str
-    threshold: float
     price_report: BootstrapPriceCoverageReport
     fundamentals_coverage_date: str | None
     fundamentals_total_symbols: int
     fundamentals_covered_symbols: int
     fundamentals_missing_symbols: tuple[str, ...]
+
+    @property
+    def market(self) -> str:
+        return self.price_report.market
+
+    @property
+    def threshold(self) -> float:
+        return self.price_report.threshold
+
+    @property
+    def price_threshold(self) -> float:
+        return self.price_report.threshold
+
+    @property
+    def fundamentals_threshold(self) -> float:
+        return self.price_report.policy.fundamentals_min_coverage
 
     @property
     def fundamentals_missing_symbol_count(self) -> int:
@@ -93,7 +139,10 @@ class BootstrapCacheCoverageReport(Mapping[str, Any]):
 
     @property
     def eligible(self) -> bool:
-        return self.price_report.eligible and self.fundamentals_coverage_ratio >= self.threshold
+        return (
+            self.price_report.eligible
+            and self.fundamentals_coverage_ratio >= self.fundamentals_threshold
+        )
 
     @property
     def mode(self) -> str:
@@ -104,6 +153,8 @@ class BootstrapCacheCoverageReport(Mapping[str, Any]):
         return {
             "market": self.market,
             "threshold": self.threshold,
+            "price_threshold": self.price_report.threshold,
+            "fundamentals_threshold": self.fundamentals_threshold,
             "eligible": self.eligible,
             "mode": self.mode,
             "price_coverage_date": price_payload["price_coverage_date"],
@@ -138,6 +189,72 @@ def _normalize_symbols(symbols: Sequence[str]) -> list[str]:
     return sorted({str(symbol).upper() for symbol in symbols if symbol})
 
 
+def _normalize_market_code(market: str | None) -> str:
+    return str(market or "US").strip().upper() or "US"
+
+
+def bootstrap_coverage_policy_for_market(market: str | None) -> BootstrapCoveragePolicy:
+    normalized_market = _normalize_market_code(market)
+    return BootstrapCoveragePolicy(
+        market=normalized_market,
+        price_min_coverage=BOOTSTRAP_PRICE_MIN_COVERAGE_BY_MARKET.get(
+            normalized_market,
+            BOOTSTRAP_CACHE_ONLY_MIN_COVERAGE,
+        ),
+        fundamentals_min_coverage=BOOTSTRAP_CACHE_ONLY_MIN_FUNDAMENTALS_COVERAGE,
+    )
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _report_meets_policy(
+    payload: Mapping[str, Any],
+    policy: BootstrapCoveragePolicy,
+) -> bool:
+    price_ratio = _optional_float(payload.get("price_coverage_ratio"))
+    fundamentals_ratio = _optional_float(payload.get("fundamentals_coverage_ratio"))
+    if price_ratio is None or fundamentals_ratio is None:
+        return False
+    return (
+        price_ratio >= policy.price_min_coverage
+        and fundamentals_ratio >= policy.fundamentals_min_coverage
+    )
+
+
+def normalize_bootstrap_gate_report(
+    *,
+    market: str | None,
+    report: Mapping[str, Any] | None,
+    unsupported_symbols: Sequence[str],
+) -> dict[str, Any]:
+    payload = dict(report or {})
+    policy = bootstrap_coverage_policy_for_market(market)
+    eligible = _report_meets_policy(payload, policy)
+    payload.update(
+        {
+            "eligible": eligible,
+            "threshold": policy.price_min_coverage,
+            "price_threshold": policy.price_min_coverage,
+            "fundamentals_threshold": policy.fundamentals_min_coverage,
+            "mode": "cache_only" if eligible else "waiting_for_cache_coverage",
+            "unsupported_skipped_count": len(unsupported_symbols) if eligible else 0,
+            "unsupported_symbols_preview": (
+                list(unsupported_symbols[:MISSING_SYMBOL_PREVIEW_LIMIT])
+                if eligible
+                else []
+            ),
+        }
+    )
+    return payload
+
+
 def _ratio(covered: int, total: int) -> float:
     return covered / total if total > 0 else 0.0
 
@@ -162,7 +279,7 @@ def evaluate_bootstrap_price_cache_coverage(
     as_of_date: date,
 ) -> BootstrapPriceCoverageReport:
     """Return bootstrap price coverage without requiring later fundamentals stages."""
-    normalized_market = str(market or "US").strip().upper() or "US"
+    normalized_market = _normalize_market_code(market)
     normalized_symbols = _normalize_symbols(symbols)
     total = len(normalized_symbols)
 
@@ -183,9 +300,9 @@ def evaluate_bootstrap_price_cache_coverage(
         if latest_price_by_symbol.get(symbol) is None
         or latest_price_by_symbol[symbol] < as_of_date
     )
+    policy = bootstrap_coverage_policy_for_market(normalized_market)
     return BootstrapPriceCoverageReport(
-        market=normalized_market,
-        threshold=BOOTSTRAP_CACHE_ONLY_MIN_COVERAGE,
+        policy=policy,
         price_coverage_date=as_of_date,
         price_total_symbols=total,
         price_covered_symbols=total - len(price_missing),
@@ -201,7 +318,7 @@ def evaluate_bootstrap_cache_coverage(
     as_of_date: date,
 ) -> BootstrapCacheCoverageReport:
     """Return a JSON-ready coverage report for bootstrap cache-only eligibility."""
-    normalized_market = str(market or "US").strip().upper() or "US"
+    normalized_market = _normalize_market_code(market)
     normalized_symbols = _normalize_symbols(symbols)
     total = len(normalized_symbols)
     price_report = evaluate_bootstrap_price_cache_coverage(
@@ -256,10 +373,7 @@ def evaluate_bootstrap_cache_coverage(
     elif fundamentals_dates:
         fundamentals_coverage_date = _date_string(max(fundamentals_dates))
 
-    threshold = BOOTSTRAP_CACHE_ONLY_MIN_COVERAGE
     return BootstrapCacheCoverageReport(
-        market=normalized_market,
-        threshold=threshold,
         price_report=price_report,
         fundamentals_coverage_date=fundamentals_coverage_date,
         fundamentals_total_symbols=total,
