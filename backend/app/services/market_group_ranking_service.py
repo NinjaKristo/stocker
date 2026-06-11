@@ -94,7 +94,7 @@ class MarketGroupRankingService:
             if not cached_bytes:
                 return None
             return self._deserialize_rrg_history(cached_bytes)
-        except (RedisError, TypeError, ValueError, OSError) as exc:
+        except (RedisError, TypeError, ValueError, IndexError, OSError) as exc:
             logger.warning("Error reading RRG history cache from Redis: %s", exc)
             return None
 
@@ -151,10 +151,20 @@ class MarketGroupRankingService:
 
         series: dict[str, list[tuple[date, float, int]]] = {}
         for group, points in series_payload.items():
-            series[str(group)] = [
-                (date.fromisoformat(str(point[0])), float(point[1]), int(point[2]))
-                for point in points
-            ]
+            if not isinstance(points, list):
+                raise ValueError("Malformed RRG history cache series")
+            series_points: list[tuple[date, float, int]] = []
+            for point in points:
+                if not isinstance(point, list) or len(point) != 3:
+                    raise ValueError("Malformed RRG history cache point")
+                series_points.append(
+                    (
+                        date.fromisoformat(str(point[0])),
+                        float(point[1]),
+                        int(point[2]),
+                    )
+                )
+            series[str(group)] = series_points
 
         return payload.get("latest_date"), dict(meta), series
 

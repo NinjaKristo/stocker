@@ -223,6 +223,48 @@ def test_market_group_ranking_service_loads_rrg_runs_once_and_returns_ascending_
     ]
 
 
+def test_market_group_ranking_service_recomputes_malformed_rrg_cache(monkeypatch):
+    fake_redis = _FakeRedis()
+    service = MarketGroupRankingService(redis_client=fake_redis)
+    latest_run = SimpleNamespace(id=3, as_of_date=date(2026, 4, 3))
+    expected = (
+        "2026-04-03",
+        {"Banks": {"rank": 1}},
+        {"Banks": [(date(2026, 4, 3), 88.0, 2)]},
+    )
+    build_calls: list[tuple[str, int, int]] = []
+
+    monkeypatch.setattr(
+        service,
+        "_get_latest_published_run",
+        lambda db, *, market, calculation_date=None: latest_run,  # noqa: ARG005
+    )
+
+    def _build_result(db, *, market, days, latest_run):  # noqa: ANN001, ARG001
+        build_calls.append((market, days, latest_run.id))
+        return expected
+
+    monkeypatch.setattr(service, "_build_rrg_history_result", _build_result)
+
+    db = Session()
+    cache_key = service._rrg_history_cache_key(  # noqa: SLF001
+        db,
+        market="HK",
+        days=30,
+        latest_run_id=latest_run.id,
+    )
+    fake_redis.values[cache_key] = (
+        b'{"schema_version":1,"latest_date":"2026-04-03",'
+        b'"meta":{},"series":{"Banks":[["2026-04-03"]]}}'
+    )
+
+    assert service.get_all_groups_history(db, market="hk", days=30) == expected
+    assert build_calls == [("HK", 30, 3)]
+    assert json.loads(fake_redis.values[cache_key])["series"]["Banks"] == [
+        ["2026-04-03", 88.0, 2],
+    ]
+
+
 def test_rrg_history_dispatcher_uses_market_group_service_directly_for_non_us():
     calls: list[tuple[str, int]] = []
 
