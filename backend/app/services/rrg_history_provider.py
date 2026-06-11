@@ -27,19 +27,6 @@ class RRGHistoryProvider(Protocol):
         """Return latest date, current ranking metadata, and daily RS series."""
 
 
-class FeatureRunRRGHistorySource(Protocol):
-    """Public source for RRG-ready non-US feature-run group history."""
-
-    def get_rrg_history(
-        self,
-        db: Any,
-        *,
-        market: str,
-        days: int,
-    ) -> RRGHistoryResult:
-        """Return latest date, current ranking metadata, and daily RS series."""
-
-
 class USGroupRankHistoryProvider:
     """Read US RRG history from persisted IBD group-rank rows."""
 
@@ -82,29 +69,6 @@ class USGroupRankHistoryProvider:
         return latest_date, meta, _collect_group_series(rows)
 
 
-class CachedFeatureRunRRGHistoryProvider:
-    """Read cached non-US RRG history from a public feature-run history source."""
-
-    def __init__(
-        self,
-        history_source: FeatureRunRRGHistorySource,
-    ) -> None:
-        self._history_source = history_source
-
-    def get_all_groups_history(
-        self,
-        db: Any,
-        *,
-        market: str,
-        days: int,
-    ) -> RRGHistoryResult:
-        return self._history_source.get_rrg_history(
-            db,
-            market=market,
-            days=days,
-        )
-
-
 class MarketDispatchRRGHistoryProvider:
     """Dispatch to the market-appropriate RRG history provider."""
 
@@ -141,7 +105,7 @@ def build_rrg_history_provider(
 ) -> RRGHistoryProvider:
     return MarketDispatchRRGHistoryProvider(
         us_provider=USGroupRankHistoryProvider(group_rank_service),
-        non_us_provider=CachedFeatureRunRRGHistoryProvider(market_group_ranking_service),
+        non_us_provider=market_group_ranking_service,
     )
 
 
@@ -155,8 +119,6 @@ def _collect_group_series(
 
 
 __all__ = [
-    "CachedFeatureRunRRGHistoryProvider",
-    "FeatureRunRRGHistorySource",
     "MarketDispatchRRGHistoryProvider",
     "RRGHistoryProvider",
     "RRGHistoryResult",

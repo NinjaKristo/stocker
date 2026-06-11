@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 import app.services.static_site_export_service as export_module
+import app.services.static_groups_rrg_export as rrg_export_module
 from app.database import Base
 from app.infra.db.models.feature_store import FeatureRun, FeatureRunPointer
 from app.models.stock import StockPrice
@@ -1763,6 +1764,75 @@ def test_build_groups_rrg_payload_emits_available_scopes(service_and_session_fac
 
     assert payload["available_scopes"] == ["groups"]
     assert payload["payload"]["groups"]["groups"][0]["industry_group"] == "Internet Services"
+
+
+def test_build_groups_rrg_payload_requests_only_market_supported_scopes(
+    service_and_session_factory,
+    monkeypatch,
+):
+    _service, session_factory = service_and_session_factory
+
+    class _FakeRRGService:
+        def get_rrg_scopes(self, db, *, market, scopes):  # noqa: ARG002
+            assert market == "TW"
+            assert scopes == ("groups",)
+            return {
+                "groups": {
+                    "date": "2026-04-18",
+                    "market": "TW",
+                    "scope": "groups",
+                    "groups": [
+                        {
+                            "industry_group": "Semiconductors",
+                            "rank": 1,
+                            "num_stocks": 12,
+                            "avg_rs_rating": 82.0,
+                            "quadrant": "Leading",
+                            "is_provisional": False,
+                            "current": {"date": "2026-04-12", "x": 104.0, "y": 103.0},
+                            "tail": [{"date": "2026-04-12", "x": 104.0, "y": 103.0}],
+                        }
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        StaticGroupsRRGPayloadBuilder,
+        "_preflight_tables",
+        lambda self, db, market: None,  # noqa: ARG005
+    )
+    builder = StaticGroupsRRGPayloadBuilder(
+        schema_version=STATIC_SITE_SCHEMA_VERSION,
+        rrg_service=_FakeRRGService(),
+    )
+
+    with session_factory() as db:
+        payload = builder.build(
+            db=db,
+            generated_at="2026-04-18T22:00:00Z",
+            expected_as_of_date=date(2026, 4, 18),
+            market="TW",
+        )
+
+    assert payload["available_scopes"] == ["groups"]
+    assert set(payload["payload"]) == {"groups"}
+
+
+def test_static_groups_rrg_builder_uses_runtime_rrg_service(monkeypatch):
+    fake_service = object()
+
+    monkeypatch.setattr(
+        rrg_export_module,
+        "get_rrg_service",
+        lambda: fake_service,
+        raising=False,
+    )
+
+    builder = StaticGroupsRRGPayloadBuilder.from_runtime_services(
+        schema_version=STATIC_SITE_SCHEMA_VERSION,
+    )
+
+    assert builder.rrg_service is fake_service
 
 
 def test_static_groups_rrg_builder_propagates_sql_errors_after_preflight(

@@ -269,21 +269,19 @@ class RRGService:
         return self._market_catalog.rrg_scopes_for_market(market or "US")
 
     def get_group_sector_map(self, db: Any, market: str = "US") -> Dict[str, str]:
-        """Map each IBD industry group -> its constituents' dominant GICS sector.
-
-        Derived from ``StockUniverse.sector`` (fully populated) via a majority
-        vote, since the codebase has no IBD-native sector taxonomy.
-        """
+        """Map each industry group to the canonical sector source for its market."""
         market = (market or "US").upper()
-        if (
-            market != "US"
-            and "sectors" in self.available_scopes_for_market(market)
-            and self._taxonomy_service is not None
-        ):
-            sector_map = self._taxonomy_service.sector_map_for_market(market)
-            if sector_map:
-                return sector_map
+        if market == "US":
+            return self._stock_universe_sector_map(db, market)
+        if "sectors" not in self.available_scopes_for_market(market):
+            return {}
+        if self._taxonomy_service is None:
+            return {}
+        return self._taxonomy_service.sector_map_for_market(market)
 
+    @staticmethod
+    def _stock_universe_sector_map(db: Any, market: str) -> Dict[str, str]:
+        """Map US IBD groups to dominant GICS sectors through stock universe rows."""
         from collections import Counter, defaultdict
 
         from ..models.industry import IBDIndustryGroup

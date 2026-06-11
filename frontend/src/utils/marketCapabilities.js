@@ -46,13 +46,3 @@ export function marketOptionsForCapability({
   const supported = normalizeAllowed(supportedMarkets || ['US']);
   return supported.length > 0 ? supported : eligibleMarkets;
 }
-
-export function marketCapabilityValue(marketCatalog, market, capability) {
-  const entries = Array.isArray(marketCatalog?.markets) ? marketCatalog.markets : [];
-  const normalized = normalizeMarketCode(market);
-  const entry = entries.find((candidate) => normalizeMarketCode(candidate?.code) === normalized);
-  if (!entry || !Object.prototype.hasOwnProperty.call(entry?.capabilities || {}, capability)) {
-    return null;
-  }
-  return entry.capabilities?.[capability] === true;
-}

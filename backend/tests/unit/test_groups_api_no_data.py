@@ -308,6 +308,10 @@ async def test_get_rrg_scopes_returns_bundle_with_available_scopes(monkeypatch, 
         def __init__(self, **kwargs):  # noqa: ANN003
             self.kwargs = kwargs
 
+        def available_scopes_for_market(self, market):
+            assert market == "HK"
+            return ("groups", "sectors")
+
         def get_rrg_scopes(self, db, *, market, scopes, tail_weeks=8, lookback_days=400):  # noqa: ARG002
             assert market == "HK"
             assert scopes == ("groups", "sectors")
@@ -351,6 +355,53 @@ async def test_get_rrg_scopes_returns_bundle_with_available_scopes(monkeypatch, 
     assert payload["payload"]["groups"]["total_groups"] == 1
     assert payload["payload"]["sectors"]["total_groups"] == 0
     assert payload["payload"]["groups"]["market_scope"] == "HK"
+
+
+@pytest.mark.asyncio
+async def test_get_rrg_scopes_requests_only_market_supported_scopes(monkeypatch, client):
+    from app.services import server_auth
+
+    monkeypatch.setattr(server_auth.settings, "server_auth_enabled", False)
+
+    class _FakeRRGService:
+        def available_scopes_for_market(self, market):
+            assert market == "TW"
+            return ("groups",)
+
+        def get_rrg_scopes(self, db, *, market, scopes, tail_weeks=8, lookback_days=400):  # noqa: ARG002
+            assert market == "TW"
+            assert scopes == ("groups",)
+            return {
+                "groups": {
+                    "date": "2026-04-18",
+                    "market": "TW",
+                    "scope": "groups",
+                    "groups": [
+                        {
+                            "industry_group": "Semiconductors",
+                            "rank": 1,
+                            "num_stocks": 12,
+                            "avg_rs_rating": 82.0,
+                            "quadrant": "Leading",
+                            "is_provisional": False,
+                            "current": {"date": "2026-04-12", "x": 104.0, "y": 103.0},
+                            "tail": [{"date": "2026-04-12", "x": 104.0, "y": 103.0}],
+                        }
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        "app.api.v1.groups._get_rrg_service",
+        lambda: _FakeRRGService(),
+    )
+
+    response = await client.get("/api/v1/groups/rrg/scopes", params={"market": "TW"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available_scopes"] == ["groups"]
+    assert set(payload["payload"]) == {"groups"}
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.infra.db.models.feature_store import FeatureRun
 from app.services.market_group_ranking_service import MarketGroupRankingService
-from app.services.rrg_history_provider import CachedFeatureRunRRGHistoryProvider
+from app.services.rrg_history_provider import build_rrg_history_provider
 
 
 def test_get_rank_movers_separates_gainers_and_losers(monkeypatch):
@@ -121,9 +121,8 @@ def test_get_current_rank_map_skips_historical_rank_change_work(monkeypatch):
     assert rank_map == {"Internet Services": 4, "Software": 7}
 
 
-def test_cached_rrg_history_provider_loads_each_run_once_and_returns_ascending_series(monkeypatch):
+def test_market_group_ranking_service_loads_rrg_runs_once_and_returns_ascending_series(monkeypatch):
     service = MarketGroupRankingService()
-    provider = CachedFeatureRunRRGHistoryProvider(service)
     latest_run = SimpleNamespace(id=3, as_of_date=date(2026, 4, 3))
     middle_run = SimpleNamespace(id=2, as_of_date=date(2026, 4, 2))
     oldest_run = SimpleNamespace(id=1, as_of_date=date(2026, 4, 1))
@@ -172,7 +171,7 @@ def test_cached_rrg_history_provider_loads_each_run_once_and_returns_ascending_s
     monkeypatch.setattr(service, "compute_group_rankings_from_rows", _rankings)
 
     db = Session()
-    latest_date, meta, series = provider.get_all_groups_history(
+    latest_date, meta, series = service.get_all_groups_history(
         db, market="HK", days=30
     )
 
@@ -186,7 +185,7 @@ def test_cached_rrg_history_provider_loads_each_run_once_and_returns_ascending_s
     ]
     assert series["Banks"][-1] == (date(2026, 4, 3), 58.0, 8)
 
-    assert provider.get_all_groups_history(db, market="HK", days=30) == (
+    assert service.get_all_groups_history(db, market="HK", days=30) == (
         latest_date,
         meta,
         series,
@@ -194,15 +193,22 @@ def test_cached_rrg_history_provider_loads_each_run_once_and_returns_ascending_s
     assert load_calls == [3, 2, 1]
 
 
-def test_cached_rrg_history_provider_delegates_to_public_history_source():
+def test_rrg_history_dispatcher_uses_market_group_service_directly_for_non_us():
     calls: list[tuple[str, int]] = []
 
-    class _HistorySource:
-        def get_rrg_history(self, db, *, market, days):  # noqa: ANN001
+    class _GroupRankService:
+        def get_current_rankings(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            raise AssertionError("US history source should not handle HK")
+
+    class _MarketGroupRankingService:
+        def get_all_groups_history(self, db, *, market, days):  # noqa: ANN001
             calls.append((market, days))
             return "2026-04-03", {}, {}
 
-    provider = CachedFeatureRunRRGHistoryProvider(_HistorySource())
+    provider = build_rrg_history_provider(
+        group_rank_service=_GroupRankService(),
+        market_group_ranking_service=_MarketGroupRankingService(),
+    )
 
     assert provider.get_all_groups_history(Session(), market="HK", days=400) == (
         "2026-04-03",

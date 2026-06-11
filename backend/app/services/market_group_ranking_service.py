@@ -38,7 +38,7 @@ class MarketGroupRankingService:
             GroupRankingHistoryResult,
         ] = OrderedDict()
 
-    def get_rrg_history(
+    def get_all_groups_history(
         self,
         db: Session,
         *,

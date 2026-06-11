@@ -298,3 +298,28 @@ def test_get_group_sector_map_uses_taxonomy_for_curated_rrg_market():
     ).get_group_sector_map(session, market="HK")
 
     assert mapping == {"Internet Services": "Information Technology"}
+
+
+def test_non_us_sector_map_does_not_fall_back_to_us_stock_universe_join():
+    session = _session()
+    session.add(
+        IBDIndustryGroup(
+            symbol="0700.HK",
+            industry_group="Internet Services",
+            market="HK",
+        )
+    )
+    session.add(StockUniverse(symbol="0700.HK", market="HK", sector="Technology"))
+    session.commit()
+
+    class _EmptyTaxonomyService:
+        def sector_map_for_market(self, market):
+            assert market == "HK"
+            return {}
+
+    mapping = RRGService(
+        history_provider=USGroupRankHistoryProvider(_StubRankService([])),
+        taxonomy_service=_EmptyTaxonomyService(),
+    ).get_group_sector_map(session, market="HK")
+
+    assert mapping == {}

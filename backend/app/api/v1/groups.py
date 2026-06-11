@@ -194,10 +194,11 @@ async def get_rrg_scopes(
     """Relative Rotation Graph coordinates for all scopes available to a market."""
     normalized_market = _normalize_rrg_market_param(market)
     service = _get_rrg_service()
+    requested_scopes = service.available_scopes_for_market(normalized_market)
     scopes = service.get_rrg_scopes(
         db,
         market=normalized_market,
-        scopes=("groups", "sectors"),
+        scopes=requested_scopes,
         tail_weeks=tail_weeks,
     )
     if not (scopes.get("groups") or {}).get("groups"):
@@ -220,7 +221,7 @@ async def get_rrg_scopes(
         for scope, scope_payload in scopes.items()
     }
     available_scopes = [
-        scope for scope in ("groups", "sectors")
+        scope for scope in requested_scopes
         if responses.get(scope) and responses[scope].total_groups > 0
     ]
 

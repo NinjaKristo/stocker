@@ -13,11 +13,8 @@ from app.infra.db.models.feature_store import FeatureRun, StockFeatureDaily
 from app.models.industry import IBDGroupRank, IBDIndustryGroup
 from app.models.stock import StockFundamental
 from app.models.stock_universe import StockUniverse
-from app.services.market_group_ranking_service import get_market_group_ranking_service
-from app.services.market_taxonomy_service import get_market_taxonomy_service
-from app.services.rrg_history_provider import build_rrg_history_provider
 from app.services.rrg_service import RRGService
-from app.wiring.bootstrap import get_group_rank_service
+from app.wiring.bootstrap import get_rrg_service
 
 
 class StaticGroupsRRGUnavailableError(RuntimeError):
@@ -45,13 +42,7 @@ class StaticGroupsRRGPayloadBuilder:
     ) -> "StaticGroupsRRGPayloadBuilder":
         return cls(
             schema_version=schema_version,
-            rrg_service=RRGService(
-                history_provider=build_rrg_history_provider(
-                    group_rank_service=get_group_rank_service(),
-                    market_group_ranking_service=get_market_group_ranking_service(),
-                ),
-                taxonomy_service=get_market_taxonomy_service(),
-            ),
+            rrg_service=get_rrg_service(),
         )
 
     def build(
@@ -64,17 +55,22 @@ class StaticGroupsRRGPayloadBuilder:
     ) -> dict[str, Any]:
         normalized_market = str(market or "US").strip().upper()
         self._preflight_tables(db, normalized_market)
+        requested_scopes = self.market_catalog.rrg_scopes_for_market(normalized_market)
+        if not requested_scopes:
+            raise StaticGroupsRRGUnavailableError(
+                section=f"{normalized_market} rrg",
+                reason=f"RRG is not enabled for market {normalized_market}.",
+            )
 
         scopes = self.rrg_service.get_rrg_scopes(
             db,
             market=normalized_market,
-            scopes=("groups", "sectors"),
+            scopes=requested_scopes,
         )
 
         groups_rrg = scopes["groups"]
-        sectors_rrg = scopes["sectors"]
         available_scopes = [
-            scope for scope in ("groups", "sectors")
+            scope for scope in requested_scopes
             if scopes.get(scope, {}).get("groups")
         ]
 
@@ -94,10 +90,7 @@ class StaticGroupsRRGPayloadBuilder:
             "market": normalized_market,
             "as_of_date": groups_rrg.get("date") or expected_as_of_date.isoformat(),
             "available_scopes": available_scopes,
-            "payload": {
-                "groups": groups_rrg,
-                "sectors": sectors_rrg,
-            },
+            "payload": {scope: scopes[scope] for scope in requested_scopes},
         }
 
     def _preflight_tables(self, db: Any, market: str) -> None:
