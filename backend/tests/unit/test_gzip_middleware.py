@@ -3,6 +3,10 @@ Tests for response compression (GZipMiddleware).
 
 Large JSON payloads (scan results, group rankings) must ship gzip-compressed
 when the client advertises support; tiny payloads stay uncompressed.
+
+These run against the real app because the middleware ORDER is the contract
+under test: GZip must sit inside the BaseHTTPMiddleware (which re-streams
+responses without Content-Length), or minimum_size is silently defeated.
 """
 import pytest
 import pytest_asyncio
@@ -13,16 +17,21 @@ from app.main import app
 _LARGE_PAYLOAD = {"rows": [{"symbol": f"SYM{i}", "value": i * 1.5} for i in range(500)]}
 
 
-@app.get("/_test/large-response", include_in_schema=False)
-async def _large_response():
-    return _LARGE_PAYLOAD
-
-
 @pytest_asyncio.fixture
 async def client():
+    # Mount a large-response probe route for the duration of the test only,
+    # so the shared app object is not left mutated for the rest of the suite.
+    async def _large_response():
+        return _LARGE_PAYLOAD
+
+    app.add_api_route("/_test/large-response", _large_response, include_in_schema=False)
+    probe_route = app.router.routes[-1]
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+    finally:
+        app.router.routes.remove(probe_route)
 
 
 @pytest.mark.asyncio

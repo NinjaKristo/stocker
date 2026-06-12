@@ -48,4 +48,5 @@ EXPOSE 8000
 
 # UVICORN_WORKERS: API worker processes. Each worker opens its own DB pool
 # (DB_POOL_SIZE + DB_MAX_OVERFLOW connections); lower this on small hosts.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]
+# exec makes uvicorn PID 1 so SIGTERM reaches it for graceful shutdown.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]

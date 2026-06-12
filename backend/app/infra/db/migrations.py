@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 
 from alembic import command
@@ -49,43 +50,46 @@ def _has_alembic_version_table(engine: Engine) -> bool:
         return "alembic_version" in inspector.get_table_names()
 
 
-def migrate_database_to_head(engine: Engine, revision: str = "head") -> str:
-    """Upgrade new databases and reconcile pre-Alembic schemas before upgrade.
-
-    Holds a Postgres advisory lock for the duration so concurrent uvicorn
-    workers (or replicas sharing one database) cannot run DDL simultaneously;
-    late arrivals block on the lock and then no-op against the migrated schema.
-    """
-    if engine.dialect.name == "postgresql":
-        with engine.connect() as lock_conn:
+@contextmanager
+def _migration_lock(engine: Engine):
+    """Hold a Postgres advisory lock so concurrent uvicorn workers (or
+    replicas sharing one database) cannot run DDL simultaneously; late
+    arrivals block, then no-op against the migrated schema. Releases
+    automatically if the holding session dies. No-op on other dialects
+    (the SQLite test harness)."""
+    if engine.dialect.name != "postgresql":
+        yield
+        return
+    with engine.connect() as lock_conn:
+        lock_conn.execute(
+            text("SELECT pg_advisory_lock(:key)"),
+            {"key": _MIGRATION_ADVISORY_LOCK_KEY},
+        )
+        try:
+            yield
+        finally:
             lock_conn.execute(
-                text("SELECT pg_advisory_lock(:key)"),
+                text("SELECT pg_advisory_unlock(:key)"),
                 {"key": _MIGRATION_ADVISORY_LOCK_KEY},
             )
-            try:
-                return _migrate_database_to_head_unlocked(engine, revision)
-            finally:
-                lock_conn.execute(
-                    text("SELECT pg_advisory_unlock(:key)"),
-                    {"key": _MIGRATION_ADVISORY_LOCK_KEY},
-                )
-    return _migrate_database_to_head_unlocked(engine, revision)
 
 
-def _migrate_database_to_head_unlocked(engine: Engine, revision: str) -> str:
-    config = _alembic_config(_engine_database_url(engine))
-    has_version_table = _has_alembic_version_table(engine)
-    has_user_tables = _has_user_tables(engine)
+def migrate_database_to_head(engine: Engine, revision: str = "head") -> str:
+    """Upgrade new databases and reconcile pre-Alembic schemas before upgrade."""
+    with _migration_lock(engine):
+        config = _alembic_config(_engine_database_url(engine))
+        has_version_table = _has_alembic_version_table(engine)
+        has_user_tables = _has_user_tables(engine)
 
-    if has_user_tables and not has_version_table:
-        logger.info("Reconciling legacy pre-Alembic schema before upgrade to %s", revision)
-        reconcile_legacy_runtime_schema(engine)
-        logger.info("Stamping baseline revision %s for reconciled legacy schema", _BASELINE_REVISION)
-        command.stamp(config, _BASELINE_REVISION)
-        logger.info("Legacy schema reconciliation completed; running Alembic upgrade to %s", revision)
+        if has_user_tables and not has_version_table:
+            logger.info("Reconciling legacy pre-Alembic schema before upgrade to %s", revision)
+            reconcile_legacy_runtime_schema(engine)
+            logger.info("Stamping baseline revision %s for reconciled legacy schema", _BASELINE_REVISION)
+            command.stamp(config, _BASELINE_REVISION)
+            logger.info("Legacy schema reconciliation completed; running Alembic upgrade to %s", revision)
+            command.upgrade(config, revision)
+            return "reconciled"
+
+        logger.info("Running Alembic upgrade to revision %s", revision)
         command.upgrade(config, revision)
-        return "reconciled"
-
-    logger.info("Running Alembic upgrade to revision %s", revision)
-    command.upgrade(config, revision)
-    return "upgraded"
+        return "upgraded"

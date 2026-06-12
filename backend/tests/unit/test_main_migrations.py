@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 
@@ -99,12 +100,7 @@ def test_migrate_database_to_head_releases_lock_when_upgrade_fails():
         "app.infra.db.migrations._has_user_tables", return_value=True
     ), patch("app.infra.db.migrations._alembic_config", return_value=object()), patch(
         "app.infra.db.migrations.command.upgrade", side_effect=RuntimeError("boom")
-    ):
-        try:
-            migrate_database_to_head(engine)
-        except RuntimeError:
-            pass
-        else:  # pragma: no cover - defensive
-            raise AssertionError("expected upgrade failure to propagate")
+    ), pytest.raises(RuntimeError):
+        migrate_database_to_head(engine)
 
     assert calls == ["lock", "unlock"]
