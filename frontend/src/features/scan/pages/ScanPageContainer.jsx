@@ -66,7 +66,12 @@ function ScanPage() {
   const { selectedMarket: globalMarket } = useMarket();
   const { activeProfileDetail } = useStrategyProfile();
   const scanDefaultsAppliedRef = useRef(null);
-  const hasAutoLoadedScanRef = useRef(false);
+  // Market whose latest scan is already auto-loaded. Changing the global
+  // market re-arms the auto-load for the new market. Starts undefined ("none
+  // yet") — distinct from null, which is the no-provider global market value.
+  const autoLoadedMarketRef = useRef(undefined);
+  const globalMarketRef = useRef(globalMarket);
+  globalMarketRef.current = globalMarket;
   const scanHistoryRef = useRef([]);
   const queryClient = useQueryClient();
 
@@ -230,7 +235,7 @@ function ScanPage() {
         setBootstrappedScanId(null);
         setScanStatus(null);
         setPage(1);
-        hasAutoLoadedScanRef.current = true;
+        autoLoadedMarketRef.current = globalMarketRef.current;
         return;
       }
 
@@ -274,7 +279,7 @@ function ScanPage() {
     // Scoped to the global market selector: the previous-scans list only
     // shows the selected market's scans.
     queryKey: ['scanHistory', globalMarket],
-    queryFn: () => getScans({ limit: 20, ...(globalMarket ? { market: globalMarket } : {}) }),
+    queryFn: () => getScans({ limit: 20, market: globalMarket ?? undefined }),
     enabled: initialQueriesEnabled || scanStatus === 'running' || scanStatus === 'queued',
     refetchInterval: scanStatus === 'running' ? 10000 : false,
     refetchIntervalInBackground: false,
@@ -285,20 +290,33 @@ function ScanPage() {
     scanHistoryRef.current = scanHistory?.scans ?? [];
   }, [scanHistory?.scans]);
 
+  // Keep the loaded scan coherent with the global market selector: on first
+  // load and on every market switch, load that market's newest finished scan
+  // (the history list is already market-scoped).
   useEffect(() => {
-    if (hasAutoLoadedScanRef.current) {
+    if (autoLoadedMarketRef.current === globalMarket) {
       return;
     }
-    if (!currentScanId && scanHistory?.scans?.length > 0) {
-      const latestCompletedScan = scanHistory.scans.find(
-        (scan) => scan.status === 'completed' || scan.status === 'cancelled'
-      );
-      if (latestCompletedScan) {
-        hasAutoLoadedScanRef.current = true;
-        handleLoadScan(latestCompletedScan.scan_id);
-      }
+    if (scanStatus === 'running' || scanStatus === 'queued') {
+      return;
     }
-  }, [currentScanId, handleLoadScan, scanHistory]);
+    const scans = scanHistory?.scans ?? [];
+    if (scans.length === 0) {
+      return;
+    }
+    const latestCompletedScan = scans.find(
+      (scan) => scan.status === 'completed' || scan.status === 'cancelled'
+    );
+    if (!latestCompletedScan) {
+      // Nothing finished yet (e.g. a scan is still running) — leave the
+      // marker unset so the next history refresh can auto-load.
+      return;
+    }
+    autoLoadedMarketRef.current = globalMarket;
+    if (latestCompletedScan.scan_id !== currentScanId) {
+      handleLoadScan(latestCompletedScan.scan_id);
+    }
+  }, [currentScanId, globalMarket, handleLoadScan, scanHistory, scanStatus]);
 
   const createScanMutation = useMutation({
     mutationFn: createScan,

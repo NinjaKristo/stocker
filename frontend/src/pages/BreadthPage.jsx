@@ -98,11 +98,6 @@ const MARKET_LIVE_BENCHMARK_SYMBOLS = {
 
 const BREADTH_MARKET_FALLBACKS = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE'];
 
-// Overrides the app-wide keep-previous-data placeholder for market-keyed
-// queries: switching markets must show a loading state, not the previous
-// market's data under the new market's label.
-const NO_PLACEHOLDER = () => undefined;
-
 function BreadthPage() {
   const { runtimeReady, uiSnapshots } = useRuntime();
   const queryClient = useQueryClient();
@@ -134,9 +129,6 @@ function BreadthPage() {
     enabled: snapshotEnabled && !bootstrapSettled,
     retry: false,
     staleTime: 60_000,
-    // Never surface the previous market's snapshot while this market loads:
-    // the seeding effect below would write it into this market's cache.
-    placeholderData: NO_PLACEHOLDER,
   });
 
   useEffect(() => {
@@ -198,7 +190,6 @@ function BreadthPage() {
     enabled: liveQueriesEnabled,
     refetchInterval: 60000, // Refetch every minute
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   // Fetch historical data (last 90 days)
@@ -209,7 +200,6 @@ function BreadthPage() {
     queryFn: () => getHistoricalBreadth(startDate, endDate, 365, selectedMarket),
     enabled: liveQueriesEnabled,
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   // Fetch summary statistics
@@ -218,7 +208,6 @@ function BreadthPage() {
     queryFn: () => getBreadthSummary(selectedMarket),
     enabled: liveQueriesEnabled,
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   // Fetch extended breadth data for chart (up to 2 years)
@@ -231,7 +220,6 @@ function BreadthPage() {
     queryFn: () => getHistoricalBreadth(chartDateRange.startDate, chartDateRange.endDate, 730, selectedMarket),
     enabled: liveQueriesEnabled,
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   // Fetch optional benchmark history for the overlay
@@ -242,7 +230,6 @@ function BreadthPage() {
     queryFn: () => getPriceHistory(benchmarkSymbol, spyPeriod),
     enabled: liveQueriesEnabled && Boolean(benchmarkSymbol),
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   const handleTabChange = (event, newValue) => {

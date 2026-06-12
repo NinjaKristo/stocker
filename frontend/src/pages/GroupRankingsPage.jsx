@@ -64,11 +64,6 @@ import { rrgScopesForMarket } from '../utils/rrgScopes';
 
 const GROUP_RANKING_MARKET_FALLBACKS = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA'];
 
-// Overrides the app-wide keep-previous-data placeholder for market-keyed
-// queries: switching markets must show a loading state, not the previous
-// market's rows under the new market's label.
-const NO_PLACEHOLDER = () => undefined;
-
 const REASON_HINTS = {
   warmup_incomplete: 'Wait for the post-close cache warmup to finish, then retry.',
   missing_ibd_mappings: 'Load IBD industry group mappings into the database first.',
@@ -529,9 +524,6 @@ function GroupRankingsPage() {
     enabled: snapshotEnabled && !bootstrapSettled,
     retry: false,
     staleTime: 60_000,
-    // Never surface the previous market's snapshot while this market loads:
-    // the seeding effect below would write it into this market's cache.
-    placeholderData: NO_PLACEHOLDER,
   });
 
   useEffect(() => {
@@ -586,7 +578,6 @@ function GroupRankingsPage() {
     enabled: liveQueriesEnabled && !isRrgView,
     refetchInterval: 60000,
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   // Fetch movers for selected period
@@ -598,7 +589,6 @@ function GroupRankingsPage() {
     queryFn: () => getRankMovers(selectedPeriod, 10, selectedMarket),
     enabled: liveQueriesEnabled && !isRrgView,
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
 
   // Fetch RRG coordinates for all available scopes (only when the RRG view is active).
@@ -611,7 +601,6 @@ function GroupRankingsPage() {
     queryFn: () => getRRGBundle(8, 197, selectedMarket),
     enabled: liveQueriesEnabled && isRrgView && rrgAvailable,
     staleTime: 60_000,
-    placeholderData: NO_PLACEHOLDER,
   });
   const { availableScopes: availableRrgScopes } = useRRGScopeSelection({
     view,

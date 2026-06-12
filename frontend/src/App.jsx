@@ -59,7 +59,11 @@ const queryClient = new QueryClient({
       refetchIntervalInBackground: false,
       staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh
       gcTime: 30 * 60 * 1000, // 30 minutes - keep in cache (was cacheTime in v4)
-      placeholderData: (previousData) => previousData, // Use previous data while loading
+      // No global keep-previous-data placeholder: most queries here are keyed
+      // by market/entity, where carrying the previous key's data across a
+      // switch displays wrong data under the new label (and once poisoned a
+      // bootstrap-seeded cache). Queries that benefit from previous data
+      // (e.g. paginated tables) opt in explicitly.
     },
   },
 });
