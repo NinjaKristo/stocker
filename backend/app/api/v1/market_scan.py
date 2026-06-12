@@ -27,6 +27,7 @@ from ...services.daily_snapshot_service import (
     build_daily_snapshot_payload,
     daily_snapshot_cache_key,
     daily_snapshot_etag,
+    latest_completed_scan,
 )
 from ...services.redis_pool import get_redis_client
 from ...wiring.bootstrap import get_get_scan_results_use_case, get_uow
@@ -63,7 +64,10 @@ async def get_daily_snapshot(
             detail=f"Unsupported market '{market}'. Expected one of: {supported}.",
         )
 
-    cache_key = daily_snapshot_cache_key(code)
+    # Keyed on the latest scan run: publishing a new run switches the key,
+    # so cached snapshots invalidate immediately (TTL is just a backstop).
+    scan = latest_completed_scan(db, code)
+    cache_key = daily_snapshot_cache_key(code, scan.scan_id if scan else None)
     payload_json: str | None = None
     redis = get_redis_client()
     if redis is not None:
@@ -79,6 +83,7 @@ async def get_daily_snapshot(
             db,
             market=code,
             market_display_name=_market_catalog.get(code).label,
+            scan=scan,
             uow=uow,
             scan_results_use_case=use_case,
         )

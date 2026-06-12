@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { useSearchParams } from 'react-router-dom';
 
 import { useRuntime } from './RuntimeContext';
-import { normalizeMarketCode } from '../utils/marketCapabilities';
+import { marketOptionsForCapability, normalizeMarketCode } from '../utils/marketCapabilities';
 
 export const MARKET_STORAGE_KEY = 'server-mode:selected-market';
 
@@ -88,4 +88,33 @@ export function MarketProvider({ children }) {
 
 export function useMarket() {
   return useContext(MarketContext);
+}
+
+/**
+ * Global market selection clamped to the markets supporting a capability.
+ *
+ * Pages whose data only exists for some markets (group rankings, breadth)
+ * follow the header selector when possible and fall back to the first
+ * capable market otherwise.
+ */
+export function useMarketForCapability(capability, fallbackCodes) {
+  const { enabledMarkets, supportedMarkets, primaryMarket, marketCatalog } = useRuntime();
+  const { selectedMarket } = useMarket();
+
+  const availableMarkets = useMemo(() => marketOptionsForCapability({
+    marketCatalog,
+    capability,
+    fallbackCodes,
+    enabledMarkets,
+    supportedMarkets,
+  }), [capability, enabledMarkets, fallbackCodes, marketCatalog, supportedMarkets]);
+
+  const market = useMemo(() => {
+    const preferred = normalizeMarketCode(selectedMarket || primaryMarket || 'US');
+    return availableMarkets.includes(preferred)
+      ? preferred
+      : (availableMarkets[0] || 'US');
+  }, [availableMarkets, primaryMarket, selectedMarket]);
+
+  return { market, availableMarkets };
 }

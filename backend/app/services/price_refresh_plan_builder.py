@@ -67,11 +67,7 @@ def load_active_price_refresh_universe(
     market: str | None,
     effective_market: str,
     normalize_market: Callable[[str], str],
-    include_key_markets: bool = False,
 ) -> PriceRefreshUniverse:
-    """Load the refresh universe; ``include_key_markets`` appends the Daily
-    Snapshot key-market symbols (refresh planning only — readiness gating
-    must not count instruments outside the stock universe)."""
     from ..models.stock_universe import StockUniverse
 
     query = db.query(StockUniverse.symbol, StockUniverse.market).filter(
@@ -88,17 +84,32 @@ def load_active_price_refresh_universe(
         )
         for row in universe_rows
     }
-    if include_key_markets:
-        key_market_symbols = _key_market_refresh_symbols(market, normalize_market)
-        extra_symbols = tuple(
-            symbol for symbol in key_market_symbols if symbol not in symbol_markets
-        )
-        if extra_symbols:
-            all_symbols = all_symbols + extra_symbols
-            symbol_markets.update(
-                {symbol: key_market_symbols[symbol] for symbol in extra_symbols}
-            )
     return PriceRefreshUniverse(symbols=all_symbols, symbol_markets=symbol_markets)
+
+
+def extend_universe_with_key_market_symbols(
+    universe: PriceRefreshUniverse,
+    market: str | None,
+    normalize_market: Callable[[str], str],
+) -> PriceRefreshUniverse:
+    """Append Daily Snapshot key-market symbols to a refresh universe.
+
+    Composed into refresh planning only — readiness gating loads the plain
+    universe and must not count instruments outside it.
+    """
+    key_market_symbols = _key_market_refresh_symbols(market, normalize_market)
+    extra_symbols = tuple(
+        symbol for symbol in key_market_symbols if symbol not in universe.symbol_markets
+    )
+    if not extra_symbols:
+        return universe
+    return PriceRefreshUniverse(
+        symbols=universe.symbols + extra_symbols,
+        symbol_markets={
+            **universe.symbol_markets,
+            **{symbol: key_market_symbols[symbol] for symbol in extra_symbols},
+        },
+    )
 
 
 def build_price_refresh_planning_input(
@@ -113,12 +124,15 @@ def build_price_refresh_planning_input(
     recently_refreshed_filter: Callable[[Sequence[str]], Sequence[str]] | None = None,
 ) -> PriceRefreshPlanningInput:
     parsed_mode = PriceRefreshMode.parse(mode)
-    universe = load_active_price_refresh_universe(
-        db,
-        market=market,
-        effective_market=effective_market,
-        normalize_market=normalize_market,
-        include_key_markets=True,
+    universe = extend_universe_with_key_market_symbols(
+        load_active_price_refresh_universe(
+            db,
+            market=market,
+            effective_market=effective_market,
+            normalize_market=normalize_market,
+        ),
+        market,
+        normalize_market,
     )
     all_symbols = _normalize_symbols(universe.symbols)
     github_seed = None

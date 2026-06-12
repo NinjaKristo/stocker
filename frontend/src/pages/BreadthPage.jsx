@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -30,11 +30,7 @@ import { getPriceHistory } from '../api/stocks';
 import BreadthChart from '../components/Charts/BreadthChart';
 import { format } from 'date-fns';
 import { useRuntime } from '../contexts/RuntimeContext';
-import { useMarket } from '../contexts/MarketContext';
-import {
-  marketOptionsForCapability,
-  normalizeMarketCode,
-} from '../utils/marketCapabilities';
+import { useMarketForCapability } from '../contexts/MarketContext';
 
 // Helper function to calculate date range based on time selection
 const getDateRange = (range) => {
@@ -85,21 +81,6 @@ const sentimentBg = {
   neutral: { row: 'transparent', cell: 'transparent' },
 };
 
-const MARKET_LABELS = {
-  US: 'United States',
-  HK: 'Hong Kong',
-  IN: 'India',
-  JP: 'Japan',
-  KR: 'South Korea',
-  TW: 'Taiwan',
-  CN: 'China A-shares',
-  CA: 'Canada',
-  DE: 'Germany',
-  SG: 'Singapore',
-  AU: 'Australia',
-  MY: 'Malaysia',
-};
-
 const MARKET_LIVE_BENCHMARK_SYMBOLS = {
   US: 'SPY',
   HK: '2800.HK',
@@ -117,39 +98,16 @@ const MARKET_LIVE_BENCHMARK_SYMBOLS = {
 
 const BREADTH_MARKET_FALLBACKS = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE'];
 
-function normalizeMarket(market) {
-  const normalized = normalizeMarketCode(market || 'US');
-  return MARKET_LABELS[normalized] ? normalized : 'US';
-}
-
 function BreadthPage() {
-  const {
-    runtimeReady,
-    uiSnapshots,
-    primaryMarket = 'US',
-    enabledMarkets = ['US'],
-    supportedMarkets = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA', 'DE', 'SG', 'AU', 'MY'],
-    marketCatalog,
-  } = useRuntime();
+  const { runtimeReady, uiSnapshots } = useRuntime();
   const queryClient = useQueryClient();
-  const marketOptions = useMemo(() => marketOptionsForCapability({
-    marketCatalog,
-    capability: 'breadth',
-    fallbackCodes: BREADTH_MARKET_FALLBACKS,
-    enabledMarkets,
-    supportedMarkets,
-  }), [enabledMarkets, marketCatalog, supportedMarkets]);
+  const { market: selectedMarket } = useMarketForCapability(
+    'breadth',
+    BREADTH_MARKET_FALLBACKS,
+  );
   const [selectedTab, setSelectedTab] = useState(0);
   const [chartTimeRange, setChartTimeRange] = useState('1M');
   const [bootstrapSettled, setBootstrapSettled] = useState(false);
-  const { selectedMarket: globalMarket } = useMarket();
-  // Clamp the global header selection to markets with breadth coverage.
-  const selectedMarket = useMemo(() => {
-    const preferred = normalizeMarket(globalMarket || primaryMarket);
-    return marketOptions.includes(preferred)
-      ? preferred
-      : (marketOptions[0] || 'US');
-  }, [globalMarket, marketOptions, primaryMarket]);
   useEffect(() => {
     setBootstrapSettled(false);
   }, [selectedMarket]);
@@ -277,9 +235,6 @@ function BreadthPage() {
     setSelectedTab(newValue);
   };
 
-  // Market selection moved to the global header selector (MarketSelector).
-  const marketSelector = null;
-
   if (!runtimeReady) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
@@ -293,7 +248,6 @@ function BreadthPage() {
   if (errorCurrent) {
     return (
       <Container maxWidth="xl" sx={{ mt: 2, mb: 2 }}>
-        {marketSelector}
         <Alert severity="error">
           Error loading {selectedMarket} breadth data: {errorCurrent.message}
         </Alert>
@@ -309,8 +263,6 @@ function BreadthPage() {
         </Box>
       ) : (
         <>
-          {marketSelector}
-
           {/* Top Section - Side by Side Layout */}
           <Grid container spacing={2} sx={{ mb: 2 }}>
             {/* Left: Chart (60%) */}

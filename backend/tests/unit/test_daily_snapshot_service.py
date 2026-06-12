@@ -40,9 +40,15 @@ class TestKeyMarketRefreshSymbols:
 
 
 class TestSnapshotCacheHelpers:
-    def test_cache_key_is_market_scoped_and_versioned(self):
-        key = daily_snapshot_cache_key("us")
-        assert key == f"daily_snapshot:v{DAILY_SNAPSHOT_SCHEMA_VERSION}:US"
+    def test_cache_key_is_scoped_to_market_and_scan_run(self):
+        key = daily_snapshot_cache_key("us", "scan-abc")
+        assert key == f"daily_snapshot:v{DAILY_SNAPSHOT_SCHEMA_VERSION}:US:scan-abc"
+        # A newly published run switches the key, invalidating the old entry.
+        assert daily_snapshot_cache_key("us", "scan-def") != key
+
+    def test_cache_key_without_scan(self):
+        key = daily_snapshot_cache_key("hk", None)
+        assert key == f"daily_snapshot:v{DAILY_SNAPSHOT_SCHEMA_VERSION}:HK:no-scan"
 
     def test_etag_is_stable_and_weak(self):
         first = daily_snapshot_etag('{"a":1}')

@@ -1,7 +1,7 @@
 import { MenuItem, Select } from '@mui/material';
 
 import { useMarket } from '../../contexts/MarketContext';
-import { marketFlag } from '../../static/marketFlags';
+import { marketFlag } from '../../utils/marketFlags';
 
 function MarketSelector() {
   const { selectedMarket, setSelectedMarket, selectableMarkets, marketLabel } = useMarket();

@@ -9,18 +9,18 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.domain.common.query import FilterSpec, PageSpec, QuerySpec, SortOrder, SortSpec
-from app.domain.markets.key_markets import key_market_instruments
+from app.domain.markets.catalog import get_market_catalog
+from app.domain.scanning.default_filters import resolve_default_scan_filters
 from app.models.market_breadth import MarketBreadth
 from app.models.scan_result import Scan
-from app.models.stock import StockPrice
 from app.schemas.scanning import ScanResultItem
+from app.services.key_market_history import build_key_market_entries
 from app.use_cases.scanning.get_scan_results import GetScanResultsQuery
 
 logger = logging.getLogger(__name__)
@@ -28,34 +28,29 @@ logger = logging.getLogger(__name__)
 DAILY_SNAPSHOT_SCHEMA_VERSION = 1
 DAILY_SNAPSHOT_CACHE_TTL_SECONDS = 600
 DAILY_SNAPSHOT_TOP_RESULTS = 20
-KEY_MARKET_HISTORY_POINTS = 30
-# Calendar window wide enough to cover 30 trading days across holidays.
-KEY_MARKET_HISTORY_CALENDAR_DAYS = 60
 LEADERS_MAX_GROUP_RANK = 40
 LEADERS_MIN_RS_RATING = 80
 TOP_GROUPS_LIMIT = 10
 
 
-def daily_snapshot_cache_key(market: str) -> str:
-    return f"daily_snapshot:v{DAILY_SNAPSHOT_SCHEMA_VERSION}:{market.upper()}"
+def daily_snapshot_cache_key(market: str, scan_id: str | None) -> str:
+    """Cache key scoped to the scan run, so a new run invalidates immediately."""
+    return (
+        f"daily_snapshot:v{DAILY_SNAPSHOT_SCHEMA_VERSION}"
+        f":{market.upper()}:{scan_id or 'no-scan'}"
+    )
 
 
 def daily_snapshot_etag(payload_json: str) -> str:
     return 'W/"{}"'.format(hashlib.sha1(payload_json.encode("utf-8")).hexdigest())
 
 
-def _default_min_dollar_volume(market: str) -> int | None:
-    from app.services.static_site_export_service import StaticSiteExportService
-
-    return StaticSiteExportService.resolve_static_default_filters(market).get("minVolume")
-
-
-def _latest_completed_scan(db: Session, market: str) -> Scan | None:
+def latest_completed_scan(db: Session, market: str) -> Scan | None:
     return (
         db.query(Scan)
         .filter(
             Scan.status == "completed",
-            Scan.universe_market == market,
+            Scan.universe_market == market.upper(),
         )
         .order_by(Scan.completed_at.desc().nullslast(), Scan.id.desc())
         .first()
@@ -85,53 +80,6 @@ def _scan_freshness(scan: Scan | None) -> dict[str, Any]:
     }
 
 
-def _build_key_markets(db: Session, market: str) -> list[dict[str, Any]]:
-    instruments = key_market_instruments(market)
-    if not instruments:
-        return []
-    data_symbols = [instrument.data_symbol for instrument in instruments]
-    cutoff = date.today() - timedelta(days=KEY_MARKET_HISTORY_CALENDAR_DAYS)
-    rows = (
-        db.query(StockPrice.symbol, StockPrice.date, StockPrice.close)
-        .filter(
-            StockPrice.symbol.in_(data_symbols),
-            StockPrice.date >= cutoff,
-        )
-        .order_by(StockPrice.symbol.asc(), StockPrice.date.asc())
-        .all()
-    )
-    history_by_symbol: dict[str, list[tuple[date, float | None]]] = defaultdict(list)
-    for symbol, row_date, close in rows:
-        history_by_symbol[str(symbol).upper()].append((row_date, close))
-
-    entries: list[dict[str, Any]] = []
-    for instrument in instruments:
-        points = [
-            {"date": row_date.isoformat(), "close": close}
-            for row_date, close in history_by_symbol.get(instrument.data_symbol.upper(), [])
-            if close is not None
-        ][-KEY_MARKET_HISTORY_POINTS:]
-        latest = points[-1] if points else None
-        previous = points[-2] if len(points) > 1 else None
-        change_1d = None
-        if latest is not None and previous is not None and previous["close"] not in (None, 0):
-            change_1d = round(
-                ((latest["close"] - previous["close"]) / previous["close"]) * 100, 2
-            )
-        entries.append(
-            {
-                "symbol": instrument.display_symbol,
-                "display_name": instrument.display_name,
-                "currency": instrument.currency,
-                "latest_close": latest["close"] if latest is not None else None,
-                "latest_date": latest["date"] if latest is not None else None,
-                "change_1d": change_1d,
-                "history": points,
-            }
-        )
-    return entries
-
-
 def _query_scan_rows(
     *,
     uow: Any,
@@ -159,13 +107,11 @@ def _query_scan_rows(
 def _build_top_groups(db: Session, market: str) -> tuple[list[dict[str, Any]], str | None]:
     from app.wiring.bootstrap import get_group_rank_service
 
-    try:
-        rankings = get_group_rank_service().get_current_rankings(
-            db, limit=TOP_GROUPS_LIMIT, market=market
-        )
-    except Exception:  # groups are optional for markets without rankings
-        logger.info("Daily snapshot: no group rankings for market %s", market)
+    if not get_market_catalog().get(market).capabilities.group_rankings:
         return [], None
+    rankings = get_group_rank_service().get_current_rankings(
+        db, limit=TOP_GROUPS_LIMIT, market=market
+    )
     if not rankings:
         return [], None
     groups_date = rankings[0].get("date")
@@ -199,13 +145,17 @@ def build_daily_snapshot_payload(
     *,
     market: str,
     market_display_name: str,
+    scan: Scan | None,
     uow: Any,
     scan_results_use_case: Any,
 ) -> dict[str, Any]:
-    """Assemble the full Daily Snapshot payload for one market."""
+    """Assemble the full Daily Snapshot payload for one market.
+
+    ``scan`` is the latest completed scan for the market (resolved by the
+    caller, which also keys the response cache on it).
+    """
     normalized = market.upper()
-    scan = _latest_completed_scan(db, normalized)
-    min_volume = _default_min_dollar_volume(normalized)
+    min_volume = resolve_default_scan_filters(normalized).get("minVolume")
 
     top_candidates: list[dict[str, Any]] = []
     leaders: list[dict[str, Any]] = []
@@ -242,7 +192,7 @@ def build_daily_snapshot_payload(
         "market_display_name": market_display_name,
         "scan_id": freshness["scan_id"],
         "freshness": freshness,
-        "key_markets": _build_key_markets(db, normalized),
+        "key_markets": build_key_market_entries(db, normalized),
         "top_candidates": {
             "min_dollar_volume": min_volume,
             "rows": top_candidates,

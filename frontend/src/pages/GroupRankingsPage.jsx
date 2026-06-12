@@ -56,14 +56,10 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { useRuntime } from '../contexts/RuntimeContext';
-import { useMarket } from '../contexts/MarketContext';
+import { useMarketForCapability } from '../contexts/MarketContext';
 import PriceSparkline from '../components/Scan/PriceSparkline';
 import RSSparkline from '../components/Scan/RSSparkline';
 import GroupChartsGrid from '../components/Charts/GroupChartsGrid';
-import {
-  marketOptionsForCapability,
-  normalizeMarketCode,
-} from '../utils/marketCapabilities';
 import { rrgScopesForMarket } from '../utils/rrgScopes';
 
 const GROUP_RANKING_MARKET_FALLBACKS = ['US', 'HK', 'IN', 'JP', 'KR', 'TW', 'CN', 'CA'];
@@ -496,28 +492,14 @@ function GroupRankingsPage() {
     features,
     runtimeReady,
     uiSnapshots,
-    primaryMarket,
-    enabledMarkets,
-    supportedMarkets,
     marketCatalog,
   } = useRuntime();
   const queryClient = useQueryClient();
   const [selectedPeriod, setSelectedPeriod] = useState('1w');
-  const availableMarkets = useMemo(() => marketOptionsForCapability({
-    marketCatalog,
-    capability: 'group_rankings',
-    fallbackCodes: GROUP_RANKING_MARKET_FALLBACKS,
-    enabledMarkets,
-    supportedMarkets,
-  }), [enabledMarkets, marketCatalog, supportedMarkets]);
-  const { selectedMarket: globalMarket } = useMarket();
-  // Clamp the global header selection to markets with group rankings.
-  const selectedMarket = useMemo(() => {
-    const preferred = normalizeMarketCode(globalMarket || primaryMarket || 'US');
-    return availableMarkets.includes(preferred)
-      ? preferred
-      : (availableMarkets[0] || 'US');
-  }, [availableMarkets, globalMarket, primaryMarket]);
+  const { market: selectedMarket } = useMarketForCapability(
+    'group_rankings',
+    GROUP_RANKING_MARKET_FALLBACKS,
+  );
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [view, setView] = useState('table'); // 'table' | 'rrg'
   const [rrgScope, setRrgScope] = useState('groups'); // 'groups' | 'sectors'
@@ -722,9 +704,6 @@ function GroupRankingsPage() {
       })
     : [];
 
-  // Market selection moved to the global header selector (MarketSelector).
-  const marketFilter = null;
-
   if (!runtimeReady) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
@@ -746,9 +725,8 @@ function GroupRankingsPage() {
   if (errorRankings && !isRrgView) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          {marketFilter}
-          {features.tasks && selectedMarket === 'US' && (
+        {features.tasks && selectedMarket === 'US' && (
+          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
             <Button
               variant="contained"
               startIcon={<RefreshIcon />}
@@ -757,8 +735,8 @@ function GroupRankingsPage() {
             >
               {isCalculating ? 'Calculating...' : 'Calculate Rankings'}
             </Button>
-          )}
-        </Box>
+          </Box>
+        )}
         <Alert severity="error">
           Error loading rankings: {errorRankings.message}
         </Alert>
@@ -769,9 +747,6 @@ function GroupRankingsPage() {
 
   return (
     <Container maxWidth="xl" sx={{ mt: 2, mb: 2 }}>
-      <Box sx={{ mb: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        {marketFilter}
-
       {features.tasks && selectedMarket === 'US' && (
         <Box sx={{ mb: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
           <Button
@@ -785,7 +760,6 @@ function GroupRankingsPage() {
           </Button>
         </Box>
       )}
-      </Box>
 
       {renderCalculationErrorAlert({ mb: 1.5 })}
 
