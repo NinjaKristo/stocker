@@ -32,7 +32,7 @@ const debounce = (fn, ms) => {
  * @param {Array|null} props.priceData - Optional static OHLCV payload to render without API calls
  * @param {number|null} props.dataUpdatedAtOverride - Optional timestamp (ms) for static bundles
  * @param {boolean} props.compact - When true, hides overlays (Daily/Weekly toggle, OHLC legend, updated-at indicator) for dense grid layouts
- * @param {boolean} props.hideTimeframeToggle - When true, hides only the Daily/Weekly toggle (other overlays stay) and forces the daily timeframe
+ * @param {boolean} props.hideTimeframeToggle - When true, hides the Daily/Weekly and RS toggle cluster (other overlays stay) and forces the daily timeframe
  * @param {boolean} props.interactive - When false, disables time-axis pan/zoom (mouse wheel, drag, pinch) until re-enabled
  */
 function CandlestickChart({

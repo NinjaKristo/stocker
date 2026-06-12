@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react';
 
-// Drags smaller than this (in axis units) are treated as clicks, so click
-// handlers on chart elements (e.g. head-dot selection) survive the zoom
-// handlers wired to the same surface.
-const MIN_DRAG = 0.4;
+// Pointer movements smaller than this (in chart pixels, per axis) are treated
+// as clicks, so click handlers on chart elements (e.g. head-dot selection)
+// survive the zoom handlers wired to the same surface. Pixel-space so the
+// gesture feels the same at any zoom depth — a domain-unit threshold would
+// inflate as the window narrows, swallowing follow-up zooms.
+const MIN_DRAG_PX = 8;
 
 /**
  * Drag-to-zoom state for a recharts chart with two numeric axes. Spread
  * `mouseHandlers` onto the chart: recharts mouse events carry `xValue`/
- * `yValue` (the axis scales inverted at the cursor) on ScatterChart, which
- * feed the in-progress selection rectangle; releasing the mouse commits it
- * as the new axis domains.
+ * `yValue` (the axis scales inverted at the cursor) plus `chartX`/`chartY`
+ * (pixel coords) on ScatterChart. The data coords feed the in-progress
+ * selection rectangle and the committed domains; the pixel coords decide
+ * click-vs-drag. Releasing the mouse commits the rectangle as the new axis
+ * domains.
  *
  * Kept out of the chart component (like useRRGFilters) so the chart stays a
  * pure visualization and the click-vs-drag contract is testable in isolation.
@@ -29,21 +33,27 @@ export function useDragZoom(defaultDomain, resetKey) {
     setDrag(null);
   }, [resetKey]);
 
+  // The selection rectangle is tracked in both spaces: data coords (x/y) feed
+  // the rendered rectangle and the committed domains; chart-pixel coords
+  // (px/py) feed the click-vs-drag decision.
   const onMouseDown = (e) => {
-    if (e?.xValue == null || e?.yValue == null) return;
-    setDrag({ x1: e.xValue, y1: e.yValue, x2: e.xValue, y2: e.yValue });
+    if (e?.xValue == null || e?.yValue == null || e?.chartX == null || e?.chartY == null) return;
+    setDrag({
+      x1: e.xValue, y1: e.yValue, x2: e.xValue, y2: e.yValue,
+      px1: e.chartX, py1: e.chartY, px2: e.chartX, py2: e.chartY,
+    });
   };
 
   const onMouseMove = (e) => {
-    if (!drag || e?.xValue == null || e?.yValue == null) return;
-    setDrag((d) => (d ? { ...d, x2: e.xValue, y2: e.yValue } : d));
+    if (!drag || e?.xValue == null || e?.yValue == null || e?.chartX == null || e?.chartY == null) return;
+    setDrag((d) => (d ? { ...d, x2: e.xValue, y2: e.yValue, px2: e.chartX, py2: e.chartY } : d));
   };
 
   const onMouseUp = () => {
     if (!drag) return;
-    const { x1, y1, x2, y2 } = drag;
+    const { x1, y1, x2, y2, px1, py1, px2, py2 } = drag;
     setDrag(null);
-    if (Math.abs(x2 - x1) < MIN_DRAG || Math.abs(y2 - y1) < MIN_DRAG) return;
+    if (Math.abs(px2 - px1) < MIN_DRAG_PX || Math.abs(py2 - py1) < MIN_DRAG_PX) return;
     setZoom({
       x: [Math.min(x1, x2), Math.max(x1, x2)],
       y: [Math.min(y1, y2), Math.max(y1, y2)],
