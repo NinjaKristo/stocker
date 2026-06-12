@@ -46,7 +46,8 @@ USER stockscanner
 
 EXPOSE 8000
 
-# UVICORN_WORKERS: API worker processes. Each worker opens its own DB pool
-# (DB_POOL_SIZE + DB_MAX_OVERFLOW connections); lower this on small hosts.
-# exec makes uvicorn PID 1 so SIGTERM reaches it for graceful shutdown.
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]
+# WEB_CONCURRENCY is uvicorn's native worker-count env var. Each worker opens
+# its own DB pool (DB_POOL_SIZE + DB_MAX_OVERFLOW connections); lower on small hosts.
+ENV WEB_CONCURRENCY=4
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

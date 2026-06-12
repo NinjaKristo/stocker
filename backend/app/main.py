@@ -8,7 +8,6 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import Response
@@ -144,13 +143,11 @@ app = FastAPI(
     openapi_url=_openapi_url,
 )
 
-# Compress JSON payloads (scan results / rankings pages run 100KB+ uncompressed).
-# Must be registered BEFORE the http-decorator middleware below: later
-# registrations wrap earlier ones, and the BaseHTTPMiddleware re-streams
-# responses without Content-Length, which would defeat minimum_size. Innermost
-# placement lets gzip see the original response size. Streaming SSE responses
-# are compressed chunk-by-chunk with flushes, so event delivery is preserved.
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+# NOTE: response compression is intentionally NOT done here. Every supported
+# deployment compresses API JSON at the edge (nginx gzip_types includes
+# application/json; the Caddy HTTPS overlay sets `encode zstd gzip`), which
+# also correctly skips SSE (text/event-stream). Backend-level GZipMiddleware
+# would duplicate that work on this container's CPU budget and gzip SSE.
 
 
 @app.middleware("http")
