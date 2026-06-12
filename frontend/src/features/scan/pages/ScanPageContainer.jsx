@@ -25,6 +25,7 @@ import {
 import { useFilterPresets } from '../../../hooks/useFilterPresets';
 import { useRuntimeActivity } from '../../../hooks/useRuntimeActivity';
 import { useRuntime } from '../../../contexts/RuntimeContext';
+import { useMarket } from '../../../contexts/MarketContext';
 import { useStrategyProfile } from '../../../contexts/StrategyProfileContext';
 import { DEFAULT_SCAN_DEFAULTS } from '../../../constants/scanDefaults';
 import { buildDefaultScanFilters } from '../defaultFilters';
@@ -62,6 +63,7 @@ function getMutationErrorDetail(error) {
 
 function ScanPage() {
   const { runtimeReady, uiSnapshots, scanDefaults, universeOptions } = useRuntime();
+  const { selectedMarket: globalMarket } = useMarket();
   const { activeProfileDetail } = useStrategyProfile();
   const scanDefaultsAppliedRef = useRef(null);
   const hasAutoLoadedScanRef = useRef(false);
@@ -269,8 +271,10 @@ function ScanPage() {
   });
 
   const { data: scanHistory, refetch: refetchScans } = useQuery({
-    queryKey: ['scanHistory'],
-    queryFn: () => getScans({ limit: 20 }),
+    // Scoped to the global market selector: the previous-scans list only
+    // shows the selected market's scans.
+    queryKey: ['scanHistory', globalMarket],
+    queryFn: () => getScans({ limit: 20, ...(globalMarket ? { market: globalMarket } : {}) }),
     enabled: initialQueriesEnabled || scanStatus === 'running' || scanStatus === 'queued',
     refetchInterval: scanStatus === 'running' ? 10000 : false,
     refetchIntervalInBackground: false,

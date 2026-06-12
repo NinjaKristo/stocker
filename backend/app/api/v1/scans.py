@@ -115,12 +115,13 @@ async def get_scan_bootstrap(
 @router.get("", response_model=ScanListResponse)
 async def list_scans(
     limit: int = Query(20, ge=1, le=100, description="Number of scans to return"),
+    market: str | None = Query(None, description="Restrict to scans of one universe market (e.g. US, HK)"),
     uow: Any = Depends(get_uow),
 ):
     """Get list of all scans ordered by most recent first."""
     try:
         with uow:
-            scans = uow.scans.list_recent(limit=limit)
+            scans = uow.scans.list_recent(limit=limit, market=market)
 
             scan_items = []
             for scan in scans:
