@@ -46,6 +46,9 @@ import {
 
 const INITIAL_UNIVERSE_SELECTION = parseLegacyUniverseDefault(DEFAULT_SCAN_DEFAULTS.universe);
 
+// "No market auto-loaded yet" marker for the scan auto-load ref.
+const NO_MARKET_AUTOLOADED = Symbol('no-market-autoloaded');
+
 function getMutationErrorMessage(error) {
   if (!error) {
     return null;
@@ -67,9 +70,9 @@ function ScanPage() {
   const { activeProfileDetail } = useStrategyProfile();
   const scanDefaultsAppliedRef = useRef(null);
   // Market whose latest scan is already auto-loaded. Changing the global
-  // market re-arms the auto-load for the new market. Starts undefined ("none
-  // yet") — distinct from null, which is the no-provider global market value.
-  const autoLoadedMarketRef = useRef(undefined);
+  // market re-arms the auto-load for the new market. The sentinel can never
+  // collide with a market code or with null (the no-provider market value).
+  const autoLoadedMarketRef = useRef(NO_MARKET_AUTOLOADED);
   const globalMarketRef = useRef(globalMarket);
   globalMarketRef.current = globalMarket;
   const scanHistoryRef = useRef([]);
@@ -377,7 +380,12 @@ function ScanPage() {
     enabled: Boolean(currentScanId) && (scanStatus === 'completed' || scanStatus === 'cancelled'),
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
+    // Keep the previous page visible across page/sort/filter changes, but
+    // only within the same scan — a scan switch (e.g. via the global market
+    // selector) must not show another scan's rows while loading.
+    placeholderData: (previousData, previousQuery) => (
+      previousQuery?.queryKey?.[1] === currentScanId ? previousData : undefined
+    ),
   });
 
   useEffect(() => {

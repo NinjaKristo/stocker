@@ -69,7 +69,12 @@ function DailyMarketSnapshotTab() {
     }),
     enabled: Boolean(scanId) && marketCapMin !== '',
     staleTime: 60_000,
-    placeholderData: (previous) => previous,
+    // Keep rows visible across market-cap bucket changes, but only within
+    // the same scan — a market switch swaps the scan and must not show the
+    // previous market's rows while loading.
+    placeholderData: (previous, previousQuery) => (
+      previousQuery?.queryKey?.[2] === scanId ? previous : undefined
+    ),
   });
 
   const topResults = marketCapMin === ''
