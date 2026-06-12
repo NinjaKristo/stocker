@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -107,12 +107,7 @@ function BreadthPage() {
   );
   const [selectedTab, setSelectedTab] = useState(0);
   const [chartTimeRange, setChartTimeRange] = useState('1M');
-  const [bootstrapSettled, setBootstrapSettled] = useState(false);
-  useEffect(() => {
-    setBootstrapSettled(false);
-  }, [selectedMarket]);
   const snapshotEnabled = runtimeReady && Boolean(uiSnapshots?.breadth);
-  const liveQueriesEnabled = runtimeReady && (!snapshotEnabled || bootstrapSettled);
 
   // Calculate date range for chart based on selected time range
   const chartDateRange = getDateRange(chartTimeRange);
@@ -123,61 +118,44 @@ function BreadthPage() {
   const spyPeriod = spyPeriodMap[chartTimeRange] || '1y';
   const benchmarkSymbol = MARKET_LIVE_BENCHMARK_SYMBOLS[selectedMarket] || null;
 
+  // The snapshot fast-path: the bootstrap queryFn seeds the live query
+  // caches synchronously for this exact market — key and payload come from
+  // the same fetch closure, so cross-market mixups are structurally
+  // impossible (no seeding effect, no settled flag).
   const breadthBootstrapQuery = useQuery({
     queryKey: ['breadthBootstrap', selectedMarket],
-    queryFn: () => getBreadthBootstrap(selectedMarket),
-    enabled: snapshotEnabled && !bootstrapSettled,
+    queryFn: async () => {
+      const snapshot = await getBreadthBootstrap(selectedMarket);
+      if (snapshot && !snapshot.is_stale) {
+        const payload = snapshot.payload ?? {};
+        queryClient.setQueryData(['breadth', 'current', selectedMarket], payload.current ?? null);
+        queryClient.setQueryData(['breadth', 'historical', selectedMarket, startDate, endDate], payload.history_90d ?? []);
+        queryClient.setQueryData(['breadth', 'summary', selectedMarket], payload.summary ?? {});
+        if (payload.chart_range === '1M') {
+          queryClient.setQueryData(
+            ['breadth', 'chart', selectedMarket, defaultChartDateRange.startDate, defaultChartDateRange.endDate],
+            payload.chart_data ?? []
+          );
+          if (benchmarkSymbol) {
+            queryClient.setQueryData(
+              ['benchmark', 'history', selectedMarket, benchmarkSymbol, '1mo'],
+              payload.benchmark_overlay ?? payload.spy_overlay ?? []
+            );
+          }
+        }
+      }
+      return snapshot;
+    },
+    enabled: snapshotEnabled,
     retry: false,
     staleTime: 60_000,
   });
-
-  useEffect(() => {
-    if (!snapshotEnabled) {
-      return;
-    }
-    if (breadthBootstrapQuery.isError) {
-      setBootstrapSettled(true);
-      return;
-    }
-    if (!breadthBootstrapQuery.isSuccess || breadthBootstrapQuery.isPlaceholderData) {
-      return;
-    }
-    if (breadthBootstrapQuery.data?.is_stale) {
-      setBootstrapSettled(true);
-      return;
-    }
-
-    const payload = breadthBootstrapQuery.data?.payload ?? {};
-    queryClient.setQueryData(['breadth', 'current', selectedMarket], payload.current ?? null);
-    queryClient.setQueryData(['breadth', 'historical', selectedMarket, startDate, endDate], payload.history_90d ?? []);
-    queryClient.setQueryData(['breadth', 'summary', selectedMarket], payload.summary ?? {});
-    if (payload.chart_range === '1M') {
-      queryClient.setQueryData(
-        ['breadth', 'chart', selectedMarket, defaultChartDateRange.startDate, defaultChartDateRange.endDate],
-        payload.chart_data ?? []
-      );
-      if (benchmarkSymbol) {
-        queryClient.setQueryData(
-          ['benchmark', 'history', selectedMarket, benchmarkSymbol, '1mo'],
-          payload.benchmark_overlay ?? payload.spy_overlay ?? []
-        );
-      }
-    }
-    setBootstrapSettled(true);
-  }, [
-    benchmarkSymbol,
-    breadthBootstrapQuery.data,
-    breadthBootstrapQuery.isError,
-    breadthBootstrapQuery.isSuccess,
-    breadthBootstrapQuery.isPlaceholderData,
-    defaultChartDateRange.endDate,
-    defaultChartDateRange.startDate,
-    endDate,
-    queryClient,
-    selectedMarket,
-    snapshotEnabled,
-    startDate,
-  ]);
+  // Live queries wait for the bootstrap to resolve either way: on success
+  // their caches are freshly seeded (no fetch); on error or a stale
+  // snapshot they fetch live data.
+  const liveQueriesEnabled = runtimeReady && (
+    !snapshotEnabled || breadthBootstrapQuery.isSuccess || breadthBootstrapQuery.isError
+  );
 
   // Fetch current breadth data
   const {

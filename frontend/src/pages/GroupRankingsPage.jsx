@@ -509,52 +509,37 @@ function GroupRankingsPage() {
   const [calculationTaskId, setCalculationTaskId] = useState(null);
   const [calculationError, setCalculationError] = useState(null);
   const [showHistoricalRanks, setShowHistoricalRanks] = useState(false); // Toggle between change vs actual rank
-  const [bootstrapSettled, setBootstrapSettled] = useState(false);
   const snapshotEnabled = runtimeReady && Boolean(uiSnapshots?.groups);
-  const liveQueriesEnabled = runtimeReady && (!snapshotEnabled || bootstrapSettled);
 
   useEffect(() => {
     setSelectedGroup(null);
-    setBootstrapSettled(false);
   }, [selectedMarket]);
 
+  // The snapshot fast-path: the bootstrap queryFn seeds the live query
+  // caches synchronously for this exact market — key and payload come from
+  // the same fetch closure, so cross-market mixups are structurally
+  // impossible (no seeding effect, no settled flag).
   const groupsBootstrapQuery = useQuery({
     queryKey: ['groupsBootstrap', selectedMarket],
-    queryFn: () => getGroupsBootstrap(selectedMarket),
-    enabled: snapshotEnabled && !bootstrapSettled,
+    queryFn: async () => {
+      const snapshot = await getGroupsBootstrap(selectedMarket);
+      if (snapshot && !snapshot.is_stale) {
+        const payload = snapshot.payload ?? {};
+        queryClient.setQueryData(['groupRankings', selectedMarket], payload.rankings ?? null);
+        queryClient.setQueryData(['groupMovers', '1w', selectedMarket], payload.movers ?? null);
+      }
+      return snapshot;
+    },
+    enabled: snapshotEnabled,
     retry: false,
     staleTime: 60_000,
   });
-
-  useEffect(() => {
-    if (!snapshotEnabled) {
-      return;
-    }
-    if (groupsBootstrapQuery.isError) {
-      setBootstrapSettled(true);
-      return;
-    }
-    if (!groupsBootstrapQuery.isSuccess || groupsBootstrapQuery.isPlaceholderData) {
-      return;
-    }
-    if (groupsBootstrapQuery.data?.is_stale) {
-      setBootstrapSettled(true);
-      return;
-    }
-
-    const payload = groupsBootstrapQuery.data?.payload ?? {};
-    queryClient.setQueryData(['groupRankings', selectedMarket], payload.rankings ?? null);
-    queryClient.setQueryData(['groupMovers', '1w', selectedMarket], payload.movers ?? null);
-    setBootstrapSettled(true);
-  }, [
-    groupsBootstrapQuery.data,
-    groupsBootstrapQuery.isError,
-    groupsBootstrapQuery.isSuccess,
-    groupsBootstrapQuery.isPlaceholderData,
-    queryClient,
-    selectedMarket,
-    snapshotEnabled,
-  ]);
+  // Live queries wait for the bootstrap to resolve either way: on success
+  // their caches are freshly seeded (no fetch); on error or a stale
+  // snapshot they fetch live data.
+  const liveQueriesEnabled = runtimeReady && (
+    !snapshotEnabled || groupsBootstrapQuery.isSuccess || groupsBootstrapQuery.isError
+  );
 
   // The RRG view has its own query (and the static-friendly RRGChart); the
   // table-only rankings/movers fetches are skipped while it's active so a
