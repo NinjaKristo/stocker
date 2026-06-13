@@ -839,24 +839,15 @@ async def get_price_history(
 _BATCH_MAX_SYMBOLS = 100
 
 
-@router.post("/history/batch", response_model=PriceHistoryBatchResponse)
-async def get_price_history_batch(payload: PriceHistoryBatchRequest):
-    """Return OHLCV history for many symbols in a single round-trip.
+def _normalize_batch_symbols(symbols: list[str]) -> list[str]:
+    """Dedupe + uppercase a batch symbol list, enforcing the batch size cap.
 
-    Partial-success semantics: symbols with no cached data are reported in
-    `missing` rather than triggering a 404. Caller receives only the symbols
-    whose data is available under the `data` map.
+    Shared input contract for the multi-symbol batch endpoints. Raises
+    HTTPException(422) for an empty result or an over-cap request.
     """
-
-    days = PERIOD_DAYS.get(payload.period)
-    if days is None:
-        raise HTTPException(
-            status_code=422, detail=f"Unsupported period: {payload.period}"
-        )
-
     seen: set[str] = set()
     normalized: list[str] = []
-    for raw in payload.symbols:
+    for raw in symbols:
         if not raw or not isinstance(raw, str):
             continue
         sym = raw.strip().upper()
@@ -873,6 +864,26 @@ async def get_price_history_batch(payload: PriceHistoryBatchRequest):
             status_code=422,
             detail=f"Too many symbols ({len(normalized)}); maximum is {_BATCH_MAX_SYMBOLS}",
         )
+
+    return normalized
+
+
+@router.post("/history/batch", response_model=PriceHistoryBatchResponse)
+async def get_price_history_batch(payload: PriceHistoryBatchRequest):
+    """Return OHLCV history for many symbols in a single round-trip.
+
+    Partial-success semantics: symbols with no cached data are reported in
+    `missing` rather than triggering a 404. Caller receives only the symbols
+    whose data is available under the `data` map.
+    """
+
+    days = PERIOD_DAYS.get(payload.period)
+    if days is None:
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported period: {payload.period}"
+        )
+
+    normalized = _normalize_batch_symbols(payload.symbols)
 
     cache_period = "5y" if payload.period == "5y" else "2y"
     frames = get_price_cache().get_many_cached_only(normalized, period=cache_period)
@@ -905,25 +916,7 @@ async def get_stock_fundamentals_batch(payload: FundamentalsBatchRequest):
     success: symbols with no cached data are reported in `missing` rather
     than triggering a 404.
     """
-    seen: set[str] = set()
-    normalized: list[str] = []
-    for raw in payload.symbols:
-        if not raw or not isinstance(raw, str):
-            continue
-        sym = raw.strip().upper()
-        if not sym or sym in seen:
-            continue
-        seen.add(sym)
-        normalized.append(sym)
-
-    if not normalized:
-        raise HTTPException(status_code=422, detail="symbols must be a non-empty list")
-
-    if len(normalized) > _BATCH_MAX_SYMBOLS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Too many symbols ({len(normalized)}); maximum is {_BATCH_MAX_SYMBOLS}",
-        )
+    normalized = _normalize_batch_symbols(payload.symbols)
 
     results = get_fundamentals_cache().get_many(normalized)
     data = {sym: value for sym, value in results.items() if value}
