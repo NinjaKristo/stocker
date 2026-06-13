@@ -31,8 +31,10 @@ def bump_group_rankings_epoch(market: str) -> None:
 
     Never raises: invalidation failure only extends staleness to the TTL.
     """
+    client = get_redis_client()
+    if client is None:
+        return
     try:
-        client = get_redis_client()
         client.incr(_EPOCH_KEY_TEMPLATE.format(market=(market or "US").upper()))
     except Exception as exc:
         logger.warning("Could not bump group-rankings cache epoch for %s: %s", market, exc)
@@ -54,21 +56,24 @@ def cached_group_payload(
     a later backfill becomes visible immediately.
     """
     normalized_market = (market or "US").upper()
-    client = None
     key = None
-    try:
-        client = get_redis_client()
-        epoch = client.get(_EPOCH_KEY_TEMPLATE.format(market=normalized_market))
-        epoch_str = epoch.decode() if isinstance(epoch, bytes) else str(epoch or 0)
-        key = _PAYLOAD_KEY_TEMPLATE.format(
-            market=normalized_market, epoch=epoch_str, name=name, params=params
-        )
-        raw = client.get(key)
-        if raw is not None:
-            return json.loads(raw)
-    except Exception as exc:
-        logger.warning("Group-rankings cache read failed (%s/%s): %s", market, name, exc)
-        client = None
+    # None is the expected Redis-unavailable path (pool down) — skip caching
+    # silently rather than logging a warning per request. Only genuine Redis
+    # errors below are warned.
+    client = get_redis_client()
+    if client is not None:
+        try:
+            epoch = client.get(_EPOCH_KEY_TEMPLATE.format(market=normalized_market))
+            epoch_str = epoch.decode() if isinstance(epoch, bytes) else str(epoch or 0)
+            key = _PAYLOAD_KEY_TEMPLATE.format(
+                market=normalized_market, epoch=epoch_str, name=name, params=params
+            )
+            raw = client.get(key)
+            if raw is not None:
+                return json.loads(raw)
+        except Exception as exc:
+            logger.warning("Group-rankings cache read failed (%s/%s): %s", market, name, exc)
+            client = None
 
     value = compute()
 

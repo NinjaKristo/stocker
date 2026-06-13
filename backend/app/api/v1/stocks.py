@@ -919,7 +919,15 @@ async def get_stock_fundamentals_batch(payload: FundamentalsBatchRequest):
     normalized = _normalize_batch_symbols(payload.symbols)
 
     results = get_fundamentals_cache().get_many(normalized)
-    data = {sym: value for sym, value in results.items() if value}
+    data: dict[str, dict] = {}
+    for sym in normalized:
+        value = results.get(sym)
+        if value:
+            # Mirror the single-symbol endpoint's contract so the shared
+            # ['fundamentals', symbol] cache entry has the same shape however
+            # it was warmed.
+            value.setdefault("symbol", sym)
+            data[sym] = value
     missing = [sym for sym in normalized if sym not in data]
     return {"data": data, "missing": missing}
 

@@ -86,14 +86,32 @@ def test_empty_results_not_cached():
     assert not [k for k in store if "rankings" in k]
 
 
-def test_redis_down_degrades_to_compute():
+def test_redis_unavailable_degrades_to_compute():
+    # get_redis_client() returns None when the pool is down (it never raises),
+    # so the cache must skip silently and still serve computed data.
     compute = MagicMock(return_value=[{"rank": 1}])
 
-    with patch(f"{MODULE}.get_redis_client", side_effect=ConnectionError("down")):
+    with patch(f"{MODULE}.get_redis_client", return_value=None):
         result = cached_group_payload(
             market="US", name="rankings", params="limit=197", compute=compute
         )
         bump_group_rankings_epoch("US")  # must not raise
+
+    assert result == [{"rank": 1}]
+    compute.assert_called_once()
+
+
+def test_redis_runtime_error_is_swallowed():
+    # If a live client raises mid-operation, the request still degrades to
+    # computed data rather than surfacing the error.
+    client = MagicMock()
+    client.get.side_effect = ConnectionError("dropped")
+    compute = MagicMock(return_value=[{"rank": 1}])
+
+    with patch(f"{MODULE}.get_redis_client", return_value=client):
+        result = cached_group_payload(
+            market="US", name="rankings", params="limit=197", compute=compute
+        )
 
     assert result == [{"rank": 1}]
     compute.assert_called_once()
