@@ -29,13 +29,17 @@ class _StubFundamentalsCache:
         self,
         cached: dict[str, dict] | None = None,
         *,
+        fail_get_many: bool = False,
         fail_symbols: set[str] | None = None,
     ):
         self.stored: dict[str, dict] = {}
         self.cached = cached or {}
+        self.fail_get_many = fail_get_many
         self.fail_symbols = fail_symbols or set()
 
     def get_many(self, symbols):
+        if self.fail_get_many:
+            raise RuntimeError("cache unavailable")
         return {symbol: dict(self.cached.get(symbol) or {}) for symbol in symbols}
 
     @staticmethod
@@ -198,6 +202,142 @@ def test_create_snapshot_run_market_scope_ignores_other_markets(monkeypatch):
     assert result["coverage"]["covered_active_symbols"] == 1
     assert result["coverage"]["missing_active_symbols"] == 0
     assert result["coverage_thresholds"]["market"] == "US"
+    db.close()
+
+
+def test_create_snapshot_run_backfills_missing_us_active_symbols_from_seeded_cache(
+    monkeypatch,
+):
+    TestingSessionLocal = _make_session()
+    db = TestingSessionLocal()
+    db.add_all(
+        [
+            StockUniverse(
+                symbol="AAPL",
+                market="US",
+                exchange="NASDAQ",
+                name="Apple Inc.",
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="active",
+            ),
+            StockUniverse(
+                symbol="MSFT",
+                market="US",
+                exchange="NASDAQ",
+                name="Microsoft Corp.",
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="active",
+            ),
+        ]
+    )
+    db.commit()
+
+    service = _make_provider_snapshot_service(
+        fundamentals_cache=_StubFundamentalsCache(
+            cached={
+                "MSFT": {
+                    "symbol": "MSFT",
+                    "company_name": "Microsoft Corp.",
+                    "market_cap": 3_000_000_000_000,
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_snapshot_rows",
+        lambda exchange_filter=None, **kwargs: {
+            "AAPL": {
+                "exchange": "NASDAQ",
+                "row_hash": "hash-aapl",
+                "normalized_payload": {"symbol": "AAPL", "exchange": "NASDAQ"},
+                "raw_payload": {"overview": {"Ticker": "AAPL"}},
+            }
+        },
+    )
+    monkeypatch.setattr(settings, "provider_snapshot_min_active_coverage_us", 0.98)
+    monkeypatch.setattr(settings, "provider_snapshot_max_missing_ratio_us", 0.005)
+
+    result = service.create_snapshot_run(
+        db,
+        run_mode="publish",
+        market="US",
+        publish=True,
+    )
+
+    rows = db.query(ProviderSnapshotRow).order_by(ProviderSnapshotRow.symbol.asc()).all()
+    assert result["published"] is True
+    assert result["coverage"]["active_symbols"] == 2
+    assert result["coverage"]["covered_active_symbols"] == 2
+    assert result["coverage"]["missing_active_symbols"] == 0
+    assert result["coverage"]["backfilled_active_symbols"] == 1
+    assert result["parity"]["backfilled_active_symbols"] == ["MSFT"]
+    assert any("Backfilled 1 US active symbols" in warning for warning in result["warnings"])
+    assert [row.symbol for row in rows] == ["AAPL", "MSFT"]
+    db.close()
+
+
+def test_create_snapshot_run_treats_cache_backfill_failure_as_missing_coverage(
+    monkeypatch,
+):
+    TestingSessionLocal = _make_session()
+    db = TestingSessionLocal()
+    db.add_all(
+        [
+            StockUniverse(
+                symbol="AAPL",
+                market="US",
+                exchange="NASDAQ",
+                name="Apple Inc.",
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="active",
+            ),
+            StockUniverse(
+                symbol="MSFT",
+                market="US",
+                exchange="NASDAQ",
+                name="Microsoft Corp.",
+                is_active=True,
+                status=UNIVERSE_STATUS_ACTIVE,
+                status_reason="active",
+            ),
+        ]
+    )
+    db.commit()
+
+    service = _make_provider_snapshot_service(
+        fundamentals_cache=_StubFundamentalsCache(fail_get_many=True)
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_snapshot_rows",
+        lambda exchange_filter=None, **kwargs: {
+            "AAPL": {
+                "exchange": "NASDAQ",
+                "row_hash": "hash-aapl",
+                "normalized_payload": {"symbol": "AAPL", "exchange": "NASDAQ"},
+                "raw_payload": {"overview": {"Ticker": "AAPL"}},
+            }
+        },
+    )
+    monkeypatch.setattr(settings, "provider_snapshot_min_active_coverage_us", 0.98)
+    monkeypatch.setattr(settings, "provider_snapshot_max_missing_ratio_us", 0.005)
+
+    result = service.create_snapshot_run(
+        db,
+        run_mode="publish",
+        market="US",
+        publish=True,
+    )
+
+    assert result["published"] is False
+    assert result["coverage"]["missing_active_symbols"] == 1
+    assert result["coverage"]["backfilled_active_symbols"] == 0
+    assert result["parity"]["backfilled_active_symbols"] == []
+    assert not any("Backfilled" in warning for warning in result["warnings"])
     db.close()
 
 

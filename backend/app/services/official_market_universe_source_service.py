@@ -726,6 +726,26 @@ class OfficialMarketUniverseSourceService:
         )
 
     def fetch_tw_snapshot(self) -> OfficialMarketUniverseSnapshot:
+        last_error: ValueError | None = None
+        for attempt in range(1, _HTTP_GET_MAX_ATTEMPTS + 1):
+            try:
+                return self._fetch_tw_snapshot_once()
+            except ValueError as exc:
+                last_error = exc
+                if attempt >= _HTTP_GET_MAX_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Retrying TW official universe fetch after invalid listing content "
+                    "on attempt %s/%s: %s",
+                    attempt,
+                    _HTTP_GET_MAX_ATTEMPTS,
+                    exc,
+                )
+                time.sleep(float(attempt))
+
+        raise RuntimeError("Unreachable retry loop for TW official universe fetch") from last_error
+
+    def _fetch_tw_snapshot_once(self) -> OfficialMarketUniverseSnapshot:
         twse_fetched = self._http_get(
             settings.tw_universe_source_twse_url,
             allow_insecure_fallback=settings.tw_universe_allow_insecure_fallback,
@@ -737,12 +757,24 @@ class OfficialMarketUniverseSourceService:
 
         twse_html = twse_fetched.content.decode("cp950", errors="replace")
         tpex_html = tpex_fetched.content.decode("cp950", errors="replace")
-        twse_date = self._parse_tw_updated_at(twse_html)
-        tpex_date = self._parse_tw_updated_at(tpex_html)
+        try:
+            twse_date = self._parse_tw_updated_at(twse_html)
+        except ValueError as exc:
+            raise ValueError(
+                f"{exc}; {self._tw_response_diagnostic('twse', twse_fetched, twse_html)}"
+            ) from exc
+        try:
+            tpex_date = self._parse_tw_updated_at(tpex_html)
+        except ValueError as exc:
+            raise ValueError(
+                f"{exc}; {self._tw_response_diagnostic('tpex', tpex_fetched, tpex_html)}"
+            ) from exc
         if twse_date != tpex_date:
             raise ValueError(
                 "TW reference bundle date mismatch between TWSE and TPEx "
-                f"({twse_date.isoformat()} vs {tpex_date.isoformat()})"
+                f"({twse_date.isoformat()} vs {tpex_date.isoformat()}); "
+                f"{self._tw_response_diagnostic('twse', twse_fetched, twse_html)}; "
+                f"{self._tw_response_diagnostic('tpex', tpex_fetched, tpex_html)}"
             )
 
         twse_rows = self.parse_tw_rows(twse_html, exchange="TWSE")
@@ -2493,6 +2525,15 @@ class OfficialMarketUniverseSourceService:
     def _collapse_whitespace(value: str) -> str:
         return " ".join(
             str(value or "").replace("\u3000", " ").replace("\xa0", " ").split()
+        )
+
+    @staticmethod
+    def _tw_response_diagnostic(label: str, fetched: _FetchedSource, html: str) -> str:
+        snippet = OfficialMarketUniverseSourceService._collapse_whitespace(html)[:180]
+        return (
+            f"{label}_url={fetched.url!r} "
+            f"{label}_bytes={len(fetched.content)} "
+            f"{label}_snippet={snippet!r}"
         )
 
     @staticmethod
