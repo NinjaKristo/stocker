@@ -66,6 +66,22 @@ def test_sync_rejects_market_mismatch(monkeypatch):
     assert out["imported"] is None
 
 
+def test_sync_unlinks_bundle_after_import(tmp_path, monkeypatch):
+    """The transient download is deleted so workers don't accumulate gzips."""
+    bundle_file = tmp_path / "ibd-classification-us-20260615-x.json.gz"
+    bundle_file.write_bytes(b"gz")
+    fake = _FakeSyncService({"status": "success", "bundle_path": str(bundle_file)})
+    monkeypatch.setattr(bundle, "read_bundle", lambda _path: {"classifications": []})
+    monkeypatch.setattr(bundle, "import_classifications", lambda _db, _payload: {"inserted": 0})
+
+    out = bundle.sync_ibd_classification_from_github(
+        db=object(), market="US", github_sync_service=fake
+    )
+
+    assert out["status"] == "success"
+    assert not bundle_file.exists()
+
+
 class _DummySession:
     def __enter__(self):
         return self
