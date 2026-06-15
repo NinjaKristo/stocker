@@ -210,5 +210,17 @@ def sync_ibd_classification_from_github(
         return {"market": normalized_market, "status": status, "imported": None, "reason": reason}
 
     payload = read_bundle(Path(result["bundle_path"]))
+    # Guard the download/trust boundary: the manifest asset is market-specific, so
+    # a market mismatch means a mispublished bundle. Mirror
+    # DailyPriceBundleService.sync_from_github, which rejects the same case.
+    payload_market = str(payload.get("market") or "").strip().upper()
+    if payload_market and payload_market != normalized_market:
+        return {
+            "market": normalized_market,
+            "status": "market_mismatch",
+            "imported": None,
+            "reason": f"bundle market {payload_market!r} does not match requested {normalized_market!r}",
+        }
+
     stats = import_classifications(db, payload)
     return {"market": normalized_market, "status": status, "imported": stats, "reason": None}

@@ -48,6 +48,24 @@ def test_sync_imports_bundle_on_success(monkeypatch):
     assert out["imported"] == {"inserted": 3, "updated": 1}
 
 
+def test_sync_rejects_market_mismatch(monkeypatch):
+    """A mispublished bundle (wrong market) is rejected before import."""
+    fake = _FakeSyncService({"status": "success", "bundle_path": "/tmp/bundle.json.gz"})
+    monkeypatch.setattr(bundle, "read_bundle", lambda _path: {"market": "HK", "classifications": []})
+
+    def _must_not_import(*_args, **_kwargs):
+        raise AssertionError("import_classifications must not run on market mismatch")
+
+    monkeypatch.setattr(bundle, "import_classifications", _must_not_import)
+
+    out = bundle.sync_ibd_classification_from_github(
+        db=object(), market="US", github_sync_service=fake
+    )
+
+    assert out["status"] == "market_mismatch"
+    assert out["imported"] is None
+
+
 class _DummySession:
     def __enter__(self):
         return self
@@ -72,6 +90,40 @@ def test_task_delegates_to_service_and_stamps_timestamp(monkeypatch):
 
     assert out["market"] == "HK"
     assert out["status"] == "success"
+    assert "timestamp" in out
+
+
+def test_task_raises_on_hard_failure(monkeypatch):
+    """Hard failures (e.g. invalid_manifest) must fail the task, not return clean."""
+    from app.tasks import industry_tasks
+    from app.tasks.workload_coordination import disable_serialized_market_workload
+
+    def _hard_fail(db, *, market):
+        return {"market": market, "status": "invalid_manifest", "imported": None, "reason": "bad sha"}
+
+    monkeypatch.setattr(industry_tasks, "sync_ibd_classification_from_github", _hard_fail)
+    monkeypatch.setattr(industry_tasks, "SessionLocal", lambda: _DummySession())
+
+    with disable_serialized_market_workload():
+        with pytest.raises(RuntimeError, match="invalid_manifest"):
+            industry_tasks.sync_ibd_classification.run(market="US")
+
+
+def test_task_does_not_raise_on_non_fatal(monkeypatch):
+    """live_only / up_to_date are clean no-ops — returned, not raised."""
+    from app.tasks import industry_tasks
+    from app.tasks.workload_coordination import disable_serialized_market_workload
+
+    def _non_fatal(db, *, market):
+        return {"market": market, "status": "live_only", "imported": None, "reason": None}
+
+    monkeypatch.setattr(industry_tasks, "sync_ibd_classification_from_github", _non_fatal)
+    monkeypatch.setattr(industry_tasks, "SessionLocal", lambda: _DummySession())
+
+    with disable_serialized_market_workload():
+        out = industry_tasks.sync_ibd_classification.run(market="US")
+
+    assert out["status"] == "live_only"
     assert "timestamp" in out
 
 
