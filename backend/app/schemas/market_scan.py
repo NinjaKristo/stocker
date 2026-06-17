@@ -131,11 +131,7 @@ class MarketHealthExposure(BaseModel):
     distribution_day_count: int
     follow_through_day: bool
     trend: Optional[str] = None
-    benchmark_price: Optional[float] = None
-    benchmark_ma50: Optional[float] = None
-    benchmark_ma200: Optional[float] = None
     vix: Optional[float] = None
-    net_4pct: Optional[int] = None
     benchmark_symbol: Optional[str] = None
     components: Optional[Dict[str, float]] = None
     history: List[MarketHealthExposureHistoryPoint]

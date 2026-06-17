@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { Box, Chip, Grid, Paper, Typography } from '@mui/material';
 import {
   Area,
@@ -133,22 +133,19 @@ function MarketHealthExposure({ exposure }) {
           </Box>
 
           <Box sx={{ mt: 1.5, display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 0.5, columnGap: 1 }}>
-            <Typography variant="caption" color="text.secondary">Distribution days</Typography>
-            <Typography variant="caption" sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 600 }}>
-              {exposure.distribution_day_count}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">Trend</Typography>
-            <Typography variant="caption" sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 600 }}>
-              {exposure.trend || '-'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">Follow-through day</Typography>
-            <Typography variant="caption" sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 600 }}>
-              {exposure.follow_through_day ? 'Yes' : 'No'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">VIX</Typography>
-            <Typography variant="caption" sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 600 }}>
-              {exposure.vix != null ? fmt(exposure.vix, 1) : '-'}
-            </Typography>
+            {[
+              ['Distribution days', exposure.distribution_day_count],
+              ['Trend', exposure.trend || '-'],
+              ['Follow-through day', exposure.follow_through_day ? 'Yes' : 'No'],
+              ['VIX', exposure.vix != null ? fmt(exposure.vix, 1) : '-'],
+            ].map(([label, value]) => (
+              <Fragment key={label}>
+                <Typography variant="caption" color="text.secondary">{label}</Typography>
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 600 }}>
+                  {value}
+                </Typography>
+              </Fragment>
+            ))}
           </Box>
         </Grid>
 
