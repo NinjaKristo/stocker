@@ -39,6 +39,10 @@ def test_daily_market_pipeline_orders_refresh_compute_and_scan(monkeypatch):
         _FakeTask("app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill"),
     )
     monkeypatch.setattr(
+        "app.tasks.breadth_tasks.calculate_market_exposure",
+        _FakeTask("app.tasks.breadth_tasks.calculate_market_exposure"),
+    )
+    monkeypatch.setattr(
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         _FakeTask("app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill"),
     )
@@ -54,6 +58,8 @@ def test_daily_market_pipeline_orders_refresh_compute_and_scan(monkeypatch):
         "app.tasks.daily_market_pipeline_tasks.guard_price_refresh",
         "app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill",
         "app.tasks.daily_market_pipeline_tasks.guard_breadth_result",
+        "app.tasks.breadth_tasks.calculate_market_exposure",
+        "app.tasks.daily_market_pipeline_tasks.guard_exposure_result",
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         "app.tasks.daily_market_pipeline_tasks.guard_group_result",
         "app.interfaces.tasks.feature_store_tasks.build_daily_snapshot",

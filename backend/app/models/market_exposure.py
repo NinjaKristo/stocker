@@ -1,0 +1,69 @@
+"""Market exposure / health model.
+
+One row per ``(date, market)`` holding a transparent 0-100 recommended-exposure
+score plus the inputs that justify it (distribution days, follow-through day,
+MA/trend, VIX, breadth). Computed daily by the market pipeline and read by the
+Daily Snapshot payloads (live + static). Partitioned by ``market`` exactly like
+``MarketBreadth`` — same calendar dates, independent universes.
+"""
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    JSON,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.sql import func
+from ..database import Base
+
+
+class MarketExposure(Base):
+    __tablename__ = "market_exposure"
+
+    id = Column(Integer, primary_key=True, index=True)
+    market = Column(String(8), nullable=False, default="US", index=True)
+    date = Column(Date, nullable=False, index=True)
+
+    # Headline
+    exposure_score = Column(Float, nullable=False)  # 0-100
+    stance = Column(String(32), nullable=False)  # band label
+
+    # Trend components computed from the market's benchmark OHLCV (SPY for US,
+    # ^HSI for HK, ^N225 for JP, ...). benchmark_symbol records which one.
+    benchmark_price = Column(Float, nullable=True)
+    benchmark_ma50 = Column(Float, nullable=True)
+    benchmark_ma200 = Column(Float, nullable=True)
+    trend = Column(String(20), nullable=True)  # bullish | neutral | bearish
+
+    # Distribution / follow-through
+    distribution_day_count = Column(Integer, nullable=False, default=0)
+    follow_through_day = Column(Boolean, nullable=False, default=False)
+    follow_through_date = Column(Date, nullable=True)
+
+    # Volatility + breadth inputs (transparency)
+    vix = Column(Float, nullable=True)  # None for non-US / when unavailable
+    net_4pct = Column(Integer, nullable=True)  # stocks_up_4pct - stocks_down_4pct
+
+    # Per-component score contributions for the UI "why" ({label: delta})
+    components = Column(JSON, nullable=True)
+    benchmark_symbol = Column(String(16), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("date", "market", name="uix_exposure_date_market"),
+        Index("idx_exposure_date", "date"),
+        Index("idx_exposure_market_date", "market", "date"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<MarketExposure(market={self.market}, date={self.date}, "
+            f"score={self.exposure_score}, stance={self.stance!r})>"
+        )
