@@ -375,27 +375,22 @@ def backfill_exposure(db: Session, market: str, start: date, end: date) -> dict:
 
     The single source of truth for range backfills (used by the Celery backfill
     task and the daily self-heal). Idempotent — compute_and_store upserts.
+    Trading-day enumeration lives in MarketCalendarService, not here.
     """
     from .market_calendar_service import MarketCalendarService
 
     market = (market or "US").upper()
-    calendar = MarketCalendarService()
-    seeded = failed = skipped = 0
-    day = start
-    while day <= end:
-        if calendar.is_trading_day(market, day):
-            try:
-                if compute_and_store(market, day, db).get("error"):
-                    failed += 1
-                else:
-                    seeded += 1
-            except Exception:
-                db.rollback()
+    seeded = failed = 0
+    for day in MarketCalendarService().trading_days(market, start, end):
+        try:
+            if compute_and_store(market, day, db).get("error"):
                 failed += 1
-        else:
-            skipped += 1
-        day += timedelta(days=1)
-    return {"seeded": seeded, "failed": failed, "skipped_non_trading_days": skipped}
+            else:
+                seeded += 1
+        except Exception:
+            db.rollback()
+            failed += 1
+    return {"seeded": seeded, "failed": failed}
 
 
 def ensure_exposure_history(
