@@ -363,7 +363,7 @@ def calculate_market_exposure(self, market: str | None = None, calculation_date:
     ``calculate_daily_breadth``'s session/commit/publish shape. Must be called
     with ``market=`` keyword (the workload decorator reads kwargs).
     """
-    from ..services.market_exposure_service import compute_and_store
+    from ..services.market_exposure_service import compute_and_store, ensure_exposure_history
 
     effective_market = (market or "US").upper()
     calendar_service = get_market_calendar_service()
@@ -384,6 +384,15 @@ def calculate_market_exposure(self, market: str | None = None, calculation_date:
         if result.get('error'):
             logger.error("✗ Market exposure not stored for %s: %s", effective_market, result['error'])
             return result
+
+        # Seed history once so the timeline isn't empty on launch; no-ops after
+        # the first run (idempotent). Avoids a manual post-deploy backfill.
+        try:
+            seed = ensure_exposure_history(db, effective_market)
+            if seed.get('seeded'):
+                logger.info("Seeded %d historical exposure rows for %s", seed['seeded'], effective_market)
+        except Exception as seed_error:
+            logger.warning("Exposure history seed skipped for %s: %s", effective_market, seed_error)
 
         try:
             from ..services.ui_snapshot_service import safe_publish_breadth_bootstrap
@@ -415,12 +424,12 @@ def calculate_market_exposure(self, market: str | None = None, calculation_date:
 @celery_app.task(bind=True, name='app.tasks.breadth_tasks.backfill_market_exposure')
 @serialized_market_workload('backfill_market_exposure')
 def backfill_market_exposure(self, start_date: str, end_date: str, market: str = "US"):
-    """Backfill MarketExposure rows over a date range so the timeline has history.
+    """Backfill MarketExposure rows over an explicit date range (manual gap-fill).
 
-    Reuses ``_generate_trading_dates`` + ``compute_and_store``. The 2y benchmark
-    frame is cached after the first call, so the per-date loop is cheap.
+    Thin wrapper around the service's backfill_exposure, which is also used by
+    the daily self-heal — one backfill implementation, two callers.
     """
-    from ..services.market_exposure_service import compute_and_store
+    from ..services.market_exposure_service import backfill_exposure
 
     effective_market = (market or "US").upper()
     try:
@@ -431,30 +440,15 @@ def backfill_market_exposure(self, start_date: str, end_date: str, market: str =
     if start > end:
         return {'error': 'Invalid date range: start_date > end_date', 'timestamp': datetime.now().isoformat()}
 
-    trading_dates, skipped = _generate_trading_dates(start, end, market=effective_market)
-    logger.info("TASK: Backfill Market Exposure (%s): %d trading days", effective_market, len(trading_dates))
-
+    logger.info("TASK: Backfill Market Exposure (%s): %s -> %s", effective_market, start, end)
     db = SessionLocal()
-    successful = failed = 0
     try:
-        for calc_date in trading_dates:
-            try:
-                result = compute_and_store(effective_market, calc_date, db)
-                if result.get('error'):
-                    failed += 1
-                else:
-                    successful += 1
-            except Exception as e:
-                db.rollback()
-                failed += 1
-                logger.warning("Exposure backfill failed for %s %s: %s", effective_market, calc_date, e)
+        result = backfill_exposure(db, effective_market, start, end)
         return {
             'market': effective_market,
             'start_date': start_date,
             'end_date': end_date,
-            'successful': successful,
-            'failed': failed,
-            'skipped_non_trading_days': skipped,
+            **result,
             'timestamp': datetime.now().isoformat(),
         }
     finally:

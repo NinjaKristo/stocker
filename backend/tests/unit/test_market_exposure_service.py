@@ -114,6 +114,32 @@ def test_compute_and_store_round_trip_validates_against_schema(monkeypatch):
         db.close()
 
 
+def test_ensure_exposure_history_seeds_then_skips(monkeypatch):
+    from app.database import SessionLocal
+    from app.models.market_exposure import MarketExposure
+    from app.services.market_exposure_service import ensure_exposure_history
+
+    df = _df(list(range(100, 350)), [1000] * 250)
+    monkeypatch.setattr(
+        "app.services.benchmark_cache_service.BenchmarkCacheService",
+        _fake_benchmark_factory(df),
+    )
+    db = SessionLocal()
+    try:
+        first = ensure_exposure_history(db, "US", min_rows=2, days=12)
+        assert first["seeded"] >= 1
+        count = db.query(MarketExposure).filter(MarketExposure.market == "US").count()
+        assert count == first["seeded"]
+
+        # Second call is a no-op: history is now above the threshold.
+        second = ensure_exposure_history(db, "US", min_rows=2, days=12)
+        assert second.get("skipped") is True
+        assert second["seeded"] == 0
+        assert db.query(MarketExposure).filter(MarketExposure.market == "US").count() == count
+    finally:
+        db.close()
+
+
 def test_compute_and_store_skips_write_when_no_benchmark(monkeypatch):
     from app.database import SessionLocal
     from app.models.market_exposure import MarketExposure

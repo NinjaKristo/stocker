@@ -61,6 +61,10 @@ CAP_BELOW_200DMA = 45.0         # price < 200DMA
 
 FTD_FLOOR = 50.0                # recent FTD after a correction raises the floor
 
+# --- History seeding (one-time, so the timeline renders on launch) ----------
+EXPOSURE_HISTORY_MIN_ROWS = 60   # below this many stored rows -> seed history
+EXPOSURE_BACKFILL_DAYS = 220     # trailing calendar days to seed (~150 sessions)
+
 # Stance bands, highest lower-bound first.
 STANCE_BANDS = [
     (85.0, "Power Trend"),
@@ -364,3 +368,57 @@ def build_exposure_payload(db: Session, market: str, history_days: int = 180) ->
         "components": latest.components,
         "history": history,
     }
+
+
+def backfill_exposure(db: Session, market: str, start: date, end: date) -> dict:
+    """Compute + store exposure for every trading day in [start, end].
+
+    The single source of truth for range backfills (used by the Celery backfill
+    task and the daily self-heal). Idempotent — compute_and_store upserts.
+    """
+    from .market_calendar_service import MarketCalendarService
+
+    market = (market or "US").upper()
+    calendar = MarketCalendarService()
+    seeded = failed = skipped = 0
+    day = start
+    while day <= end:
+        if calendar.is_trading_day(market, day):
+            try:
+                if compute_and_store(market, day, db).get("error"):
+                    failed += 1
+                else:
+                    seeded += 1
+            except Exception:
+                db.rollback()
+                failed += 1
+        else:
+            skipped += 1
+        day += timedelta(days=1)
+    return {"seeded": seeded, "failed": failed, "skipped_non_trading_days": skipped}
+
+
+def ensure_exposure_history(
+    db: Session,
+    market: str,
+    *,
+    min_rows: int = EXPOSURE_HISTORY_MIN_ROWS,
+    days: int = EXPOSURE_BACKFILL_DAYS,
+) -> dict:
+    """Seed history once so the timeline isn't empty on launch.
+
+    If the market has fewer than ``min_rows`` stored rows, backfill the trailing
+    ``days`` window; otherwise no-op. Idempotent, so the daily pipeline calls
+    this on every run and it self-heals after the first deploy with no manual
+    step. ponytail: re-fetches the benchmark frame per day, but it's a one-time
+    seed over a Redis-cached frame.
+    """
+    from .market_calendar_service import MarketCalendarService
+
+    market = (market or "US").upper()
+    existing = db.query(MarketExposure).filter(MarketExposure.market == market).count()
+    if existing >= min_rows:
+        return {"seeded": 0, "skipped": True}
+
+    end = MarketCalendarService().last_completed_trading_day(market)
+    return backfill_exposure(db, market, end - timedelta(days=days), end)
