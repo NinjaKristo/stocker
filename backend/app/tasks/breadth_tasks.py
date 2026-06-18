@@ -354,7 +354,8 @@ def calculate_daily_breadth(
     name='app.tasks.breadth_tasks.calculate_market_exposure',
 )
 @serialized_market_workload('calculate_market_exposure')
-def calculate_market_exposure(self, market: str | None = None, calculation_date: str | None = None):
+def calculate_market_exposure(self, market: str | None = None, calculation_date: str | None = None,
+                              activity_lifecycle: str | None = None):
     """Compute + store one MarketExposure row for the market.
 
     Defaults to the market's last completed trading day (or ``calculation_date``).
@@ -362,6 +363,10 @@ def calculate_market_exposure(self, market: str | None = None, calculation_date:
     and blends them into the recommended-exposure score. Mirrors
     ``calculate_daily_breadth``'s session/commit/publish shape. Must be called
     with ``market=`` keyword (the workload decorator reads kwargs).
+
+    ``activity_lifecycle`` is accepted because the bootstrap orchestrator injects
+    it into every stage's kwargs uniformly; exposure does not emit activity
+    events, so it is unused here.
     """
     from ..services.market_exposure_service import compute_and_store, ensure_exposure_history
 

@@ -40,6 +40,7 @@ def test_bootstrap_plan_uses_semantic_operations_instead_of_task_name_strings():
         BootstrapOperation.WAIT_FOR_BOOTSTRAP_PRICE_WARMUP,
         BootstrapOperation.REFRESH_ALL_FUNDAMENTALS,
         BootstrapOperation.CALCULATE_DAILY_BREADTH_WITH_GAPFILL,
+        BootstrapOperation.CALCULATE_MARKET_EXPOSURE,
         BootstrapOperation.CALCULATE_DAILY_GROUP_RANKINGS_WITH_GAPFILL,
         BootstrapOperation.BUILD_DAILY_SNAPSHOT,
     ]
@@ -75,6 +76,10 @@ def test_non_us_bootstrap_uses_market_feature_snapshot(monkeypatch):
         _FakeTask("app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill"),
     )
     monkeypatch.setattr(
+        "app.tasks.breadth_tasks.calculate_market_exposure",
+        _FakeTask("app.tasks.breadth_tasks.calculate_market_exposure"),
+    )
+    monkeypatch.setattr(
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         _FakeTask("app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill"),
     )
@@ -98,7 +103,7 @@ def test_non_us_bootstrap_uses_market_feature_snapshot(monkeypatch):
     assert snapshot.kwargs["universe_name"] == "market:HK"
     assert snapshot.kwargs["publish_pointer_key"] == "latest_published_market:HK"
     assert snapshot.kwargs["bootstrap_cache_only_if_covered"] is True
-    assert [signature.kwargs.get("activity_lifecycle") for signature in signatures] == ["bootstrap"] * 7
+    assert [signature.kwargs.get("activity_lifecycle") for signature in signatures] == ["bootstrap"] * 8
 
 
 def test_runtime_bootstrap_signatures_follow_bootstrap_plan(monkeypatch):
@@ -130,6 +135,10 @@ def test_runtime_bootstrap_signatures_follow_bootstrap_plan(monkeypatch):
         _FakeTask("app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill"),
     )
     monkeypatch.setattr(
+        "app.tasks.breadth_tasks.calculate_market_exposure",
+        _FakeTask("app.tasks.breadth_tasks.calculate_market_exposure"),
+    )
+    monkeypatch.setattr(
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         _FakeTask("app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill"),
     )
@@ -147,6 +156,7 @@ def test_runtime_bootstrap_signatures_follow_bootstrap_plan(monkeypatch):
         "app.tasks.runtime_bootstrap_tasks.wait_for_bootstrap_price_warmup",
         "app.tasks.fundamentals_tasks.refresh_all_fundamentals",
         "app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill",
+        "app.tasks.breadth_tasks.calculate_market_exposure",
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         "app.interfaces.tasks.feature_store_tasks.build_daily_snapshot",
     ]
@@ -188,6 +198,10 @@ def test_us_primary_bootstrap_loads_ibd_mappings_before_prices(monkeypatch):
         _FakeTask("app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill"),
     )
     monkeypatch.setattr(
+        "app.tasks.breadth_tasks.calculate_market_exposure",
+        _FakeTask("app.tasks.breadth_tasks.calculate_market_exposure"),
+    )
+    monkeypatch.setattr(
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         _FakeTask("app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill"),
     )
@@ -207,6 +221,7 @@ def test_us_primary_bootstrap_loads_ibd_mappings_before_prices(monkeypatch):
         "app.tasks.runtime_bootstrap_tasks.wait_for_bootstrap_price_warmup",
         "app.tasks.fundamentals_tasks.refresh_all_fundamentals",
         "app.tasks.breadth_tasks.calculate_daily_breadth_with_gapfill",
+        "app.tasks.breadth_tasks.calculate_market_exposure",
         "app.tasks.group_rank_tasks.calculate_daily_group_rankings_with_gapfill",
         "app.interfaces.tasks.feature_store_tasks.build_daily_snapshot",
     ]
