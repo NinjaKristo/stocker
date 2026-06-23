@@ -10,7 +10,16 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   };
 }
 
-if (typeof window !== 'undefined' && typeof window.localStorage === 'undefined') {
+const installMemoryLocalStorage = (target) => {
+  if (!target) {
+    return;
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(target, 'localStorage');
+  if (descriptor && !descriptor.get) {
+    return;
+  }
+
   const values = new Map();
   const storage = {
     getItem: (key) => (values.has(String(key)) ? values.get(String(key)) : null),
@@ -29,13 +38,11 @@ if (typeof window !== 'undefined' && typeof window.localStorage === 'undefined')
     },
   };
 
-  Object.defineProperty(window, 'localStorage', {
+  Object.defineProperty(target, 'localStorage', {
     configurable: true,
     value: storage,
   });
+};
 
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: storage,
-  });
-}
+installMemoryLocalStorage(typeof globalThis !== 'undefined' ? globalThis : undefined);
+installMemoryLocalStorage(typeof window !== 'undefined' ? window : undefined);
