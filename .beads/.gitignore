@@ -53,6 +53,9 @@ dolt-server.activity
 # Backup data (auto-exported JSONL, local-only)
 backup/
 
+# Manual timestamped backups (e.g. issues.jsonl.bak-YYYYMMDD-HHMMSS) — local only
+*.bak-*
+
 # Per-project environment file (Dolt connection config, GH#2520)
 .env
 
