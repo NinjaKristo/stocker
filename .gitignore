@@ -79,3 +79,7 @@ celerybeat-schedule
 
 # Load harness ephemeral output (committed baselines stay; per-run does not)
 backend/tests/load/baselines/current_run.json
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
