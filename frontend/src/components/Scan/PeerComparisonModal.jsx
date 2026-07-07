@@ -27,6 +27,7 @@ import apiClient from '../../api/client';
 import { getStockPeers } from '../../api/stocks';
 import RSSparkline from './RSSparkline';
 import AddToWatchlistMenu from '../common/AddToWatchlistMenu';
+import TickerLink from '../common/TickerLink';
 import { getStageColor } from '../../utils/colorUtils';
 
 /**
@@ -258,12 +259,11 @@ function PeerComparisonModal({ open, onClose, scanId, symbol, onOpenChart }) {
                       </TableCell>
 
                       <TableCell>
-                        <Typography
-                          variant="body2"
-                          fontWeight={peer.symbol === symbol ? 'bold' : 'normal'}
-                        >
-                          {peer.symbol}
-                        </Typography>
+                        <TickerLink
+                          symbol={peer.symbol}
+                          companyName={peer.company_name}
+                          sx={{ fontWeight: peer.symbol === symbol ? 'bold' : 'normal' }}
+                        />
                         {peer.company_name && (
                           <Typography variant="caption" color="text.secondary">
                             {peer.company_name}

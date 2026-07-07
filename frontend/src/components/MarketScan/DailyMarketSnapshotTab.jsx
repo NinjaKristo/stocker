@@ -27,6 +27,7 @@ import ChartViewerModal from '../Scan/ChartViewerModalLazy';
 import DailyScanRowsTable from '../shared/DailyScanRowsTable';
 import RankChangeCell from '../shared/RankChangeCell';
 import TickerCell from '../common/TickerCell';
+import TickerLink from '../common/TickerLink';
 import { MARKET_CAP_OPTIONS } from '../../features/scan/components/filterPanel/constants';
 import { useMarket } from '../../contexts/MarketContext';
 import { marketFlag } from '../../utils/marketFlags';
@@ -158,7 +159,7 @@ function DailyMarketSnapshotTab() {
             <Grid item xs={6} sm={4} md={2.4} key={item.symbol}>
               <Paper elevation={0} sx={{ p: 1.5, height: '100%', border: '1px solid', borderColor: 'divider' }}>
                 <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px' }}>
-                  {item.symbol}
+                  <TickerLink symbol={item.symbol} companyName={item.display_name} sx={{ fontSize: '13px' }} />
                 </Typography>
                 <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '10px' }}>
                   {item.display_name}

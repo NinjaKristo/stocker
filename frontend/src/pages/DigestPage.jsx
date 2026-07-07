@@ -1,13 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link as RouterLink } from 'react-router-dom';
 import {
   Alert,
   Box,
   Button,
   Chip,
   CircularProgress,
-  Link,
   Paper,
   Stack,
   Table,
@@ -24,6 +22,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { getDailyDigest, getDailyDigestMarkdown } from '../api/digest';
 import { ValidationDegradedAlert, ValidationSummaryCards } from '../components/Validation/ValidationPanels';
 import { useStrategyProfileData } from '../contexts/StrategyProfileContext';
+import TickerLink from '../components/common/TickerLink';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -130,15 +129,11 @@ function SymbolList({ symbols }) {
   return (
     <Stack direction="row" spacing={0.75} flexWrap="wrap">
       {symbols.map((symbol) => (
-        <Link
+        <TickerLink
           key={symbol}
-          component={RouterLink}
-          to={`/stocks/${encodeURIComponent(symbol)}`}
-          underline="hover"
+          symbol={symbol}
           sx={{ fontSize: '0.8rem' }}
-        >
-          {symbol}
-        </Link>
+        />
       ))}
     </Stack>
   );
@@ -278,9 +273,7 @@ function DigestPage() {
               {digestData.leaders.map((leader) => (
                 <TableRow key={leader.symbol}>
                   <TableCell>
-                    <Link component={RouterLink} to={`/stocks/${encodeURIComponent(leader.symbol)}`} underline="hover">
-                      {leader.symbol}
-                    </Link>
+                    <TickerLink symbol={leader.symbol} companyName={leader.name} />
                   </TableCell>
                   <TableCell>{leader.name || '-'}</TableCell>
                   <TableCell align="right">{leader.composite_score?.toFixed?.(1) ?? '-'}</TableCell>

@@ -28,6 +28,7 @@ import {
 } from '../api/breadth';
 import { getPriceHistory } from '../api/stocks';
 import BreadthChart from '../components/Charts/BreadthChart';
+import GlossaryText from '../components/common/GlossaryText';
 import { format } from 'date-fns';
 import { useRuntime } from '../contexts/RuntimeContext';
 import { useMarketForCapability } from '../contexts/MarketContext';
@@ -264,7 +265,7 @@ function BreadthPage() {
                 {/* Header */}
                 <Box sx={{ p: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box sx={{ fontSize: '13px', fontWeight: 600 }}>
-                    Latest Breadth Data
+                    <GlossaryText>Latest Breadth Data</GlossaryText>
                   </Box>
                   {currentBreadth && (
                     <Chip
@@ -282,7 +283,7 @@ function BreadthPage() {
                         {/* Daily Movers */}
                         <Grid item xs={6}>
                           <Box sx={{ fontSize: '13px', fontWeight: 600, color: 'text.secondary', mb: 1, textAlign: 'center' }}>
-                            Daily Movers (4%+)
+                            <GlossaryText>Daily Movers (4%+)</GlossaryText>
                           </Box>
                           <Box display="flex" justifyContent="center" gap={2}>
                             <Box textAlign="center">
@@ -303,7 +304,7 @@ function BreadthPage() {
                         {/* Ratios */}
                         <Grid item xs={6}>
                           <Box sx={{ fontSize: '13px', fontWeight: 600, color: 'text.secondary', mb: 1, textAlign: 'center' }}>
-                            Multi-Day Ratios
+                            <GlossaryText>Multi-Day Ratios</GlossaryText>
                           </Box>
                           <Box display="flex" justifyContent="center" gap={2}>
                             <Box textAlign="center">
@@ -317,7 +318,9 @@ function BreadthPage() {
                               }}>
                                 {currentBreadth.ratio_5day?.toFixed(2) || 'N/A'}
                               </Box>
-                              <Box sx={{ fontSize: '9px', color: 'text.secondary' }}>5D</Box>
+                              <Box sx={{ fontSize: '9px', color: 'text.secondary' }}>
+                                <GlossaryText>5D</GlossaryText>
+                              </Box>
                             </Box>
                             <Box textAlign="center">
                               <Box sx={{
@@ -330,7 +333,9 @@ function BreadthPage() {
                               }}>
                                 {currentBreadth.ratio_10day?.toFixed(2) || 'N/A'}
                               </Box>
-                              <Box sx={{ fontSize: '9px', color: 'text.secondary' }}>10D</Box>
+                              <Box sx={{ fontSize: '9px', color: 'text.secondary' }}>
+                                <GlossaryText>10D</GlossaryText>
+                              </Box>
                             </Box>
                           </Box>
                         </Grid>
@@ -466,8 +471,8 @@ function BreadthPage() {
                       <TableCell>Date</TableCell>
                       <TableCell align="right">Up 4%+</TableCell>
                       <TableCell align="right">Down 4%+</TableCell>
-                      <TableCell align="right">5D Ratio</TableCell>
-                      <TableCell align="right">10D Ratio</TableCell>
+                      <TableCell align="right"><GlossaryText>5D Ratio</GlossaryText></TableCell>
+                      <TableCell align="right"><GlossaryText>10D Ratio</GlossaryText></TableCell>
                       <TableCell align="right">Scanned</TableCell>
                     </TableRow>
                   </TableHead>

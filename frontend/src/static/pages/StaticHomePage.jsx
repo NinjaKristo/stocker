@@ -24,6 +24,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import StaticChartViewerModal from '../StaticChartViewerModal';
 import RankChangeCell from '../../components/shared/RankChangeCell';
 import TickerCell from '../../components/common/TickerCell';
+import TickerLink from '../../components/common/TickerLink';
 import { formatLocalCurrency } from '../../utils/formatUtils';
 import { useStaticMarket } from '../StaticMarketContext';
 import { marketFlag } from '../../utils/marketFlags';
@@ -225,7 +226,7 @@ function StaticHomePage() {
               >
                 <Box sx={{ flex: '0 0 auto', minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px' }}>
-                    {item.symbol}
+                    <TickerLink symbol={item.symbol} companyName={item.display_name} sx={{ fontSize: '13px' }} />
                   </Typography>
                   <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '10px' }}>
                     {item.display_name}

@@ -1,11 +1,9 @@
-import { Link as RouterLink } from 'react-router-dom';
 import {
   Alert,
   Box,
   Card,
   CardContent,
   Chip,
-  Link,
   Stack,
   Table,
   TableBody,
@@ -15,6 +13,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import TickerLink from '../common/TickerLink';
 
 function formatPercentValue(value) {
   if (value == null) return '-';
@@ -104,9 +103,7 @@ export function ValidationRecentEventsTable({ events, showSourceKind = true }) {
             <TableRow key={`${event.source_ref}:${event.event_at}:${event.attributes?.symbol || 'symbol'}:${index}`}>
               <TableCell>
                 {event.attributes?.symbol ? (
-                  <Link component={RouterLink} to={`/stocks/${encodeURIComponent(event.attributes.symbol)}`} underline="hover">
-                    {event.attributes.symbol}
-                  </Link>
+                  <TickerLink symbol={event.attributes.symbol} />
                 ) : '-'}
               </TableCell>
               {showSourceKind && (

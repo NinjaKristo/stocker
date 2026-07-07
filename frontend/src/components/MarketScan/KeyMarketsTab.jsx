@@ -9,6 +9,7 @@ import TradingViewChart from './TradingViewChart';
 import SymbolNavigator from './SymbolNavigator';
 import WatchlistManager from './WatchlistManager';
 import { getWatchlist } from '../../api/marketScan';
+import TickerLink from '../common/TickerLink';
 
 function KeyMarketsTab() {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -87,7 +88,9 @@ function KeyMarketsTab() {
       >
         <Box display="flex" alignItems="center" gap={1}>
           <Typography variant="h6" fontWeight={700} color="primary.main">
-            {currentSymbol?.symbol || 'No symbols'}
+            {currentSymbol?.symbol ? (
+              <TickerLink symbol={currentSymbol.symbol} companyName={currentSymbol.display_name} />
+            ) : 'No symbols'}
           </Typography>
           {currentSymbol?.display_name && (
             <Typography variant="body2" color="text.secondary">

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Accordion,
   AccordionDetails,
@@ -10,7 +10,6 @@ import {
   Chip,
   CircularProgress,
   Divider,
-  Link,
   Stack,
   Table,
   TableBody,
@@ -30,6 +29,7 @@ import { getStockDecisionDashboard, getStockValidation } from '../../api/stocks'
 import CandlestickChart from '../Charts/CandlestickChart';
 import StockMetricsSidebar from '../Scan/StockMetricsSidebar';
 import AddToWatchlistMenu from '../common/AddToWatchlistMenu';
+import TickerLink from '../common/TickerLink';
 import PeerComparisonModal from '../Scan/PeerComparisonModal';
 import MarketThemesList from './MarketThemesList';
 import {
@@ -477,9 +477,7 @@ function StockDetails() {
                     {data.peers.slice(0, 12).map((peer) => (
                       <TableRow key={peer.symbol}>
                         <TableCell>
-                          <Link component={RouterLink} to={`/stocks/${encodeURIComponent(peer.symbol)}`} underline="hover">
-                            {peer.symbol}
-                          </Link>
+                          <TickerLink symbol={peer.symbol} companyName={peer.company_name} />
                         </TableCell>
                         <TableCell>{peer.company_name || '-'}</TableCell>
                         <TableCell align="right">{peer.composite_score?.toFixed(1) || '-'}</TableCell>

@@ -3,7 +3,6 @@
  */
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Chip,
@@ -17,13 +16,13 @@ import {
   IconButton,
   Paper,
   Tooltip,
-  Link,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RSSparkline from '../Scan/RSSparkline';
 import PriceSparkline from '../Scan/PriceSparkline';
 import PriceChangeBar from './PriceChangeBar';
 import { removeItem } from '../../api/userWatchlists';
+import TickerLink from '../common/TickerLink';
 
 const PRICE_PERIODS = [
   { key: '1d', label: '1D' },
@@ -120,16 +119,11 @@ function WatchlistTable({ watchlistData, stewardshipBySymbol = {}, onRefresh, on
                   )}
                 </TableCell>
                 <TableCell sx={{ py: 0.25, px: 0.5, width: 55, maxWidth: 55 }}>
-                  <Link
-                    component={RouterLink}
-                    to={`/stocks/${encodeURIComponent(stock.symbol)}`}
-                    underline="hover"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <Typography variant="body2" fontWeight={500} sx={{ fontSize: '0.75rem' }}>
-                      {stock.symbol}
-                    </Typography>
-                  </Link>
+                  <TickerLink
+                    symbol={stock.symbol}
+                    companyName={stock.company_name}
+                    sx={{ fontSize: '0.75rem', fontWeight: 500 }}
+                  />
                 </TableCell>
                 <TableCell sx={{ py: 0.25, px: 0.5, maxWidth: 150, overflow: 'hidden' }}>
                   <Typography

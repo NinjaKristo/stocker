@@ -35,6 +35,7 @@ import {
   getThemeMentions,
 } from '../../../api/themes';
 import TranslatedText from '../../../components/common/TranslatedText';
+import TickerLink from '../../../components/common/TickerLink';
 
 function getSafeExternalUrl(url) {
   if (!url) {
@@ -214,7 +215,9 @@ export default function ThemeDetailModal({ themeId, themeName, open, onClose, se
                     <TableBody>
                       {detail.constituents.map((stock) => (
                         <TableRow key={stock.symbol} hover>
-                          <TableCell sx={{ fontWeight: 600 }}>{stock.symbol}</TableCell>
+                          <TableCell>
+                            <TickerLink symbol={stock.symbol} companyName={stock.company_name} />
+                          </TableCell>
                           <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                             {stock.mention_count}
                           </TableCell>
