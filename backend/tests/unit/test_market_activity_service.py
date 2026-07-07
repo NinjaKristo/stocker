@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -1086,6 +1087,40 @@ def test_runtime_activity_status_surfaces_concurrent_market_refreshes(db_session
     assert {
         item["market"]: item["percent"] for item in payload["markets"] if item["status"] == "running"
     } == {"US": 20.0, "HK": 80.0}
+
+
+def test_runtime_activity_marks_stale_price_refresh_without_live_lock(db_session, monkeypatch):
+    from app.services import market_activity_service as module
+
+    module.mark_market_activity_started(
+        db_session,
+        market="US",
+        stage_key="prices",
+        lifecycle="daily_refresh",
+        task_name="smart_refresh_cache",
+        task_id="stale-task",
+        message="Refreshing prices",
+    )
+    setting = module._get_setting(db_session, module._activity_key("US"))  # noqa: SLF001
+    payload = json.loads(setting.value)
+    payload["updated_at"] = (
+        datetime.now(timezone.utc) - timedelta(minutes=45)
+    ).isoformat()
+    setting.value = json.dumps(payload)
+    db_session.commit()
+    monkeypatch.setattr(
+        module,
+        "get_runtime_bootstrap_status",
+        lambda _db: _bootstrap_status(required=False, enabled=["US"], state="ready"),
+    )
+    monkeypatch.setattr(module, "get_data_fetch_lock", lambda: _FakeLock())
+
+    payload = module.get_runtime_activity_status(db_session)
+
+    us_market = next(item for item in payload["markets"] if item["market"] == "US")
+    assert us_market["status"] == "stale"
+    assert payload["summary"]["active_market_count"] == 0
+    assert payload["summary"]["status"] == "warning"
 
 
 def test_runtime_activity_status_surfaces_failed_market_stage(db_session, monkeypatch):

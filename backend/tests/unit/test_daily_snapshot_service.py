@@ -18,6 +18,7 @@ from app.services.daily_snapshot_service import (
     daily_snapshot_etag,
     get_or_build_daily_snapshot_payload,
     get_daily_snapshot_memory_cache,
+    serialize_daily_snapshot_payload,
     set_daily_snapshot_memory_cache,
 )
 from app.services.price_refresh_plan_builder import _key_market_refresh_symbols
@@ -230,6 +231,19 @@ class TestSnapshotCacheHelpers:
             key,
             now=100.0 + DAILY_SNAPSHOT_CACHE_TTL_SECONDS,
         ) is None
+
+    def test_serializer_rewrites_non_finite_numbers_to_strict_json(self):
+        payload = {
+            "market": "US",
+            "latest_close": float("nan"),
+            "history": [1.0, float("inf"), -float("inf")],
+        }
+
+        serialized = serialize_daily_snapshot_payload(payload)
+
+        assert "NaN" not in serialized
+        assert "Infinity" not in serialized
+        assert serialized == '{"market":"US","latest_close":null,"history":[1.0,null,null]}'
 
 
 class TestScanFreshness:

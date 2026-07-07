@@ -11,6 +11,24 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 
+def json_safe(value: Any) -> Any:
+    """Recursively coerce values to strict JSON-safe Python primitives."""
+    converted = convert_numpy_types(value)
+    if isinstance(converted, dict):
+        return {str(key): json_safe(item) for key, item in converted.items()}
+    if isinstance(converted, list):
+        return [json_safe(item) for item in converted]
+    if isinstance(converted, tuple):
+        return [json_safe(item) for item in converted]
+    if isinstance(converted, set):
+        return [json_safe(item) for item in converted]
+    if isinstance(converted, (datetime, date)):
+        return converted.isoformat()
+    if isinstance(converted, float) and not math.isfinite(converted):
+        return None
+    return converted
+
+
 def sanitize_sparkline(value: Any) -> Optional[list[float]]:
     """Return a finite-float list, or ``None`` if any element is null/non-finite.
 
@@ -74,6 +92,17 @@ def convert_numpy_types(obj: object) -> object:
             return [convert_numpy_types(i) for i in obj]
         return obj
 
+    numpy_int_types = tuple(
+        type_
+        for name in ("int_", "intc", "intp", "int8", "int16", "int32", "int64")
+        if (type_ := getattr(np, name, None)) is not None
+    )
+    numpy_float_types = tuple(
+        type_
+        for name in ("float_", "float16", "float32", "float64")
+        if (type_ := getattr(np, name, None)) is not None
+    )
+
     if isinstance(obj, dict):
         return {key: convert_numpy_types(value) for key, value in obj.items()}
     elif isinstance(obj, list):
@@ -82,9 +111,9 @@ def convert_numpy_types(obj: object) -> object:
         return obj.isoformat()
     elif isinstance(obj, np.bool_):
         return bool(obj)
-    elif isinstance(obj, (np.int_, np.intc, np.intp, np.int8, np.int16, np.int32, np.int64)):
+    elif numpy_int_types and isinstance(obj, numpy_int_types):
         return int(obj)
-    elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+    elif numpy_float_types and isinstance(obj, numpy_float_types):
         val = float(obj)
         if np.isnan(val) or np.isinf(val):
             return None
