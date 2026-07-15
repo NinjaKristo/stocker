@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.infra.db.repositories.feature_store_repo import SqlFeatureStoreRepository
 from app.models.filter_preset import FilterPreset
 from app.services.preset_screens import PRESET_SCREENS, _matches_preset_filters
 
@@ -111,7 +112,6 @@ def load_latest_serialized_rows(db: Session, market: str | None = None) -> tuple
     """
     from app.domain.scanning.filter_spec import FilterSpec, SortOrder, SortSpec
     from app.infra.db.models.feature_store import FeatureRun, FeatureRunPointer
-    from app.infra.db.repositories.feature_store_repository import SqlFeatureStoreRepository
     from app.schemas.scanning import ScanResultItem
 
     normalized_market = market.upper() if market else None

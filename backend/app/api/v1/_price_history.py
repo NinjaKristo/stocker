@@ -13,6 +13,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from ...models.stock_universe import StockUniverse
+from ...services.ohlcv import finite_ohlcv_frame
 
 PERIOD_DAYS: dict[str, int] = {
     "1mo": 30,
@@ -53,7 +54,8 @@ def resolve_symbol_market(db: Session, symbol: str) -> str | None:
 
 def dataframe_to_points(data: pd.DataFrame | None, days: int) -> list[dict]:
     """Filter an OHLCV DataFrame to the last ``days`` and convert to JSON dicts."""
-    if data is None or len(data) == 0:
+    data = finite_ohlcv_frame(data)
+    if data.empty:
         return []
 
     filtered = data[data.index >= window_cutoff(data.index, days)]

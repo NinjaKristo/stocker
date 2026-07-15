@@ -17,6 +17,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models.backplay import PaperSetup, PaperTrade
+from app.services.ohlcv import finite_ohlcv_frame
 
 from .engine import StrategySpec, _resolve_scripts
 from .selection import select_top_symbols
@@ -146,7 +147,7 @@ def evaluate_setup(
 
     def frame_for(symbol: str) -> pd.DataFrame | None:
         if symbol not in frames:
-            frames[symbol] = loader(symbol, market=setup.market)
+            frames[symbol] = finite_ohlcv_frame(loader(symbol, market=setup.market))
         return frames[symbol]
 
     for trade in open_trades:

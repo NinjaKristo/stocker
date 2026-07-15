@@ -21,6 +21,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.services.ohlcv import finite_ohlcv_frame
+
 from .script_engine import CompiledScript, ScriptError, compile_script
 
 __all__ = ["StrategySpec", "Trade", "BacktestResult", "run_backtest", "BUILTIN_STRATEGIES"]
@@ -201,6 +203,7 @@ def run_backtest(
     starting_cash: float = 10_000.0,
 ) -> BacktestResult:
     """Simulate ``spec`` over daily OHLCV bars (columns Open/High/Low/Close/Volume)."""
+    df = finite_ohlcv_frame(df)
     entry_rule, exit_rule, immediate_entry = _resolve_scripts(spec)
 
     if df is None or df.empty:
