@@ -8,7 +8,10 @@ def test_backend_app_pct_change_calls_specify_fill_method():
     offenders: list[str] = []
 
     for path in sorted(backend_app.rglob("*.py")):
-        for line_no, line in enumerate(path.read_text().splitlines(), start=1):
+        for line_no, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
             if ".pct_change(" not in line:
                 continue
             if "fill_method=" in line:

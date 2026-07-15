@@ -102,7 +102,9 @@ class TestListScans:
                 "type": "all",
                 "market": None,
                 "exchange": None,
+                "mic": None,
                 "index": None,
+                "listing_tier": None,
                 "symbols": None,
                 "allow_inactive_symbols": False,
             }

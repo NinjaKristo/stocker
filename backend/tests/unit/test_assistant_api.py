@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 
 from app.api.v1 import assistant as assistant_api
+from app.models.app_settings import AppSetting
 from app.models.chatbot import Conversation, Message
 from app.services.assistant_gateway_service import AssistantGatewayService
 from tests.helpers.mcp_fixture import create_mcp_test_session_factory, seed_market_copilot_data
@@ -16,6 +17,7 @@ from tests.helpers.mcp_fixture import create_mcp_test_session_factory, seed_mark
 @pytest_asyncio.fixture()
 async def client():
     session_factory, engine = create_mcp_test_session_factory()
+    AppSetting.__table__.create(bind=engine)
     Conversation.__table__.create(bind=engine)
     Message.__table__.create(bind=engine)
     seed_market_copilot_data(session_factory)

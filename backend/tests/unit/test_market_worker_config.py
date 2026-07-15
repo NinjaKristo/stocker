@@ -7,9 +7,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from app.tasks.market_queues import SUPPORTED_MARKETS
 
 ROOT = Path(__file__).resolve().parents[3]
+_BASH_ONLY = pytest.mark.skipif(
+    os.name == "nt",
+    reason="Docker Compose wrapper integration requires a POSIX shell",
+)
 
 
 def test_docker_compose_profiles_every_market_worker():
@@ -119,6 +125,7 @@ def _wrapper_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
+@_BASH_ONLY
 def test_enabled_market_compose_wrapper_uses_last_env_file_values(tmp_path):
     base_env = tmp_path / "base.env"
     override_env = tmp_path / "override.env"
@@ -149,6 +156,7 @@ def test_enabled_market_compose_wrapper_uses_last_env_file_values(tmp_path):
     )
 
 
+@_BASH_ONLY
 def test_enabled_market_compose_wrapper_down_enables_all_market_profiles(tmp_path):
     expected_market_profiles = ",".join(f"market-{market.lower()}" for market in SUPPORTED_MARKETS)
     env_file = tmp_path / "empty.env"
@@ -172,6 +180,7 @@ def test_enabled_market_compose_wrapper_down_enables_all_market_profiles(tmp_pat
     assert f"DOCKER_ARGS|compose|--env-file|{env_file}|down|--remove-orphans" in result.stdout
 
 
+@_BASH_ONLY
 def test_enabled_market_compose_wrapper_prefers_python311_over_old_python3(tmp_path):
     bin_dir = _fake_docker_bin(tmp_path)
     marker = tmp_path / "python311.invocations"

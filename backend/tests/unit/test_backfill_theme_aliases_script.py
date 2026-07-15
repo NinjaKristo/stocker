@@ -1,6 +1,7 @@
 """Tests for backfill_theme_aliases script behavior."""
 
 import argparse
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from scripts import backfill_theme_aliases as script
@@ -59,7 +60,7 @@ def test_main_writes_report_for_dry_run(
     session_factory.assert_called_once_with()
     mock_save_json.assert_called_once()
     saved_path = mock_save_json.call_args.args[0]
-    assert str(saved_path) == "/tmp/theme_alias_backfill_report.json"
+    assert saved_path == Path("/tmp/theme_alias_backfill_report.json")
     db.close.assert_called_once()
 
 

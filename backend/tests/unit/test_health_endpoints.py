@@ -9,6 +9,21 @@ import httpx
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def healthy_readiness_database():
+    """Keep endpoint unit tests independent from the shared SQLite connection."""
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+    mock_conn.__exit__ = MagicMock(return_value=False)
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value = mock_conn
+    with (
+        patch("app.main.engine", mock_engine),
+        patch("app.main.table_exists", return_value=True),
+    ):
+        yield
+
+
 @pytest_asyncio.fixture
 async def client():
     transport = httpx.ASGITransport(app=app)

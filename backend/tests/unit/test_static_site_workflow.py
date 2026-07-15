@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
 import textwrap
 
 
@@ -156,9 +157,9 @@ def test_static_site_fallback_downloader_only_fetches_missing_current_markets(tm
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    fake_gh = fake_bin / "gh"
+    fake_gh_script = fake_bin / "fake_gh.py"
     downloads_log = tmp_path / "downloads.jsonl"
-    fake_gh.write_text(
+    fake_gh_script.write_text(
         textwrap.dedent(
             f"""\
             #!/usr/bin/env python3
@@ -196,7 +197,16 @@ def test_static_site_fallback_downloader_only_fetches_missing_current_markets(tm
         ),
         encoding="utf-8",
     )
-    fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+    if os.name == "nt":
+        fake_gh = fake_bin / "gh.cmd"
+        fake_gh.write_text(
+            '@echo off\r\npython "%~dp0fake_gh.py" %*\r\n',
+            encoding="utf-8",
+        )
+    else:
+        fake_gh = fake_bin / "gh"
+        fake_gh.write_text(fake_gh_script.read_text(encoding="utf-8"), encoding="utf-8")
+        fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
 
     env = os.environ.copy()
     env.update(
@@ -208,9 +218,16 @@ def test_static_site_fallback_downloader_only_fetches_missing_current_markets(tm
         }
     )
 
+    fallback_script = _fallback_download_script()
+    if os.name == "nt":
+        fallback_script = fallback_script.replace(
+            '"gh",',
+            f'{sys.executable!r}, {str(fake_gh_script)!r},',
+        )
+
     try:
         result = subprocess.run(
-            ["python", "-c", _fallback_download_script()],
+            [sys.executable, "-c", fallback_script],
             check=True,
             capture_output=True,
             text=True,

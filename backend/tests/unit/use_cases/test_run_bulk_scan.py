@@ -929,7 +929,12 @@ class TestErrorHandling:
 class TestProgressEvents:
     """Progress event contents are accurate."""
 
-    def test_progress_tracks_passed_and_failed(self):
+    def test_progress_tracks_passed_and_failed(self, monkeypatch):
+        ticks = iter((100.0, 101.0))
+        monkeypatch.setattr(
+            "app.use_cases.scanning.run_bulk_scan.time.monotonic",
+            lambda: next(ticks),
+        )
         scan_repo = FakeScanRepository()
         scan_repo.scans["s1"] = _make_scan("s1")
 

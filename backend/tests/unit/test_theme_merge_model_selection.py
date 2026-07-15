@@ -35,7 +35,7 @@ def _llm_json_response(payload: str):
 
 
 def test_load_merge_model_config_reads_llm_merge_model_setting(db_session):
-    db_session.add(AppSetting(key="llm_merge_model", value="openai/glm-4.7-flash", category="llm"))
+    db_session.add(AppSetting(key="llm_merge_model", value="groq/llama-3.3-70b-versatile", category="llm"))
     db_session.commit()
 
     service = ThemeMergingService.__new__(ThemeMergingService)
@@ -44,7 +44,7 @@ def test_load_merge_model_config_reads_llm_merge_model_setting(db_session):
 
     service._load_merge_model_config()
 
-    assert service.merge_model_id == "openai/glm-4.7-flash"
+    assert service.merge_model_id == "groq/llama-3.3-70b-versatile"
 
 
 def test_load_merge_model_config_rejects_unsupported_model(db_session):

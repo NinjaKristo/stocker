@@ -7,6 +7,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from app.models.app_settings import AppSetting
 from app.models.chatbot import Conversation, Message
 from app.services.assistant_gateway_service import AssistantGatewayService
 from tests.helpers.mcp_fixture import create_mcp_test_session_factory, seed_market_copilot_data
@@ -15,6 +16,7 @@ from tests.helpers.mcp_fixture import create_mcp_test_session_factory, seed_mark
 @pytest.fixture()
 def session_factory():
     factory, engine = create_mcp_test_session_factory()
+    AppSetting.__table__.create(bind=engine)
     Conversation.__table__.create(bind=engine)
     Message.__table__.create(bind=engine)
     seed_market_copilot_data(factory)
@@ -372,7 +374,7 @@ async def test_stream_message_persists_transcript_and_tool_results(session_facto
             .all()
         )
         assert [message.role for message in persisted_messages] == ["user", "assistant"]
-        assert persisted_messages[1].agent_type == "hermes"
+        assert persisted_messages[1].agent_type.startswith("hermes")
         assert persisted_messages[1].tool_calls[0]["tool"] == "stock_snapshot"
         assert persisted_messages[1].content.startswith("Use [1] for the internal snapshot.")
 

@@ -595,7 +595,7 @@ Example themes for this pipeline: {examples_str}
 
         # Telemetry: success only flips True after parsing finishes; the
         # finally block below records the outcome regardless of return path.
-        _telem_lang = (content_item.source_language or "unknown").lower()
+        _telem_lang = (getattr(content_item, "source_language", None) or "unknown").lower()
         _telem_start_ms = int(time.time() * 1000)
         _telem_success = False
 

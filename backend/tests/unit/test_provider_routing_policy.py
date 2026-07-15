@@ -8,6 +8,7 @@ import pytest
 from app.services import provider_routing_policy as policy
 from app.domain.providers.data_plan import PLAN_VERSION as DATA_PLAN_VERSION
 from app.services.provider_routing_policy import (
+    MARKET_AU,
     MARKET_CA,
     MARKET_DE,
     MARKET_HK,
@@ -49,6 +50,7 @@ class TestMatrixShape:
 
     def test_supported_markets_covers_us_and_asia(self):
         assert supported_markets() == (
+            MARKET_AU,
             MARKET_CA,
             MARKET_CN,
             MARKET_DE,

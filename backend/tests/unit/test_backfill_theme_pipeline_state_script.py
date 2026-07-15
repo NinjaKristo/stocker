@@ -1,6 +1,7 @@
 """Tests for backfill_theme_pipeline_state script behavior."""
 
 import argparse
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -130,5 +131,5 @@ def test_main_non_dry_run_writes_checkpoint_and_report(
     assert mock_save_checkpoint.call_count == 2
     first_path = mock_save_checkpoint.call_args_list[0].args[0]
     second_path = mock_save_checkpoint.call_args_list[1].args[0]
-    assert str(first_path) == "/tmp/backfill_checkpoint.json"
-    assert str(second_path) == "/tmp/backfill_report.json"
+    assert first_path == Path("/tmp/backfill_checkpoint.json")
+    assert second_path == Path("/tmp/backfill_report.json")

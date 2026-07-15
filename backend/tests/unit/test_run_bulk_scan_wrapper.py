@@ -28,6 +28,16 @@ class _FakeResult:
 _WRAPPER_PATH = "app.tasks.scan_tasks"
 
 
+@pytest.fixture(autouse=True)
+def _prevent_real_finalizer_dispatch():
+    """Unit tests must never enqueue post-scan work on the real broker."""
+    with (
+        patch(f"{_WRAPPER_PATH}.finalize_scan_artifacts.delay"),
+        patch("app.tasks.cache_tasks.prewarm_chart_cache_for_scan.delay"),
+    ):
+        yield
+
+
 class TestRunBulkScanViaUseCase:
     """Test the thin wrapper that delegates to RunBulkScanUseCase."""
 
@@ -383,8 +393,7 @@ class TestPostScanPipeline:
 
         from app.tasks.scan_tasks import _run_post_scan_pipeline
 
-        with patch(f"{_WRAPPER_PATH}.cache_tasks", create=True):
-            _run_post_scan_pipeline("scan-001")
+        _run_post_scan_pipeline("scan-001")
 
         mock_peer_metrics.assert_called_once_with(mock_db, "scan-001")
         mock_cleanup.assert_called_once_with(mock_db, "all")

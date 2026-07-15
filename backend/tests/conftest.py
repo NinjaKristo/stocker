@@ -12,6 +12,10 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# SQLAlchemy 2.0.25's optional C extension can segfault after thousands of
+# repeated SQLite schema resets. Tests favor determinism over that optimization.
+os.environ.setdefault("DISABLE_SQLALCHEMY_CEXT_RUNTIME", "1")
+
 # Keep backend tests independent from a developer's local backend/.env and from
 # CI job-level DATABASE_URL placeholders. Tests default to the shared SQLite
 # harness unless a caller explicitly opts into using the supplied DATABASE_URL.
@@ -26,16 +30,59 @@ else:
     os.environ["DATABASE_URL"] = "sqlite://"
     os.environ["STOCKSCANNER_TEST_ALLOW_SQLITE"] = "1"
 
+# A developer's root .env may enable shared-server authentication. API tests
+# start unauthenticated unless a server-auth test explicitly enables it.
+os.environ.setdefault("SERVER_AUTH_ENABLED", "false")
+
 import app.models  # noqa: F401
 from app.database import SessionLocal, engine, Base
+from sqlalchemy import event
 
 
-@pytest.fixture(autouse=True)
-def shared_test_database():
-    """Reset the shared test database before each test."""
+@event.listens_for(engine, "connect")
+def _disable_sqlite_driver_transaction_management(dbapi_connection, _):
+    """Let SQLAlchemy own SQLite transactions so savepoints remain valid."""
+    if engine.dialect.name == "sqlite":
+        dbapi_connection.isolation_level = None
+
+
+@event.listens_for(engine, "begin")
+def _begin_sqlite_transaction(connection):
+    if engine.dialect.name == "sqlite":
+        connection.exec_driver_sql("BEGIN")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def shared_test_schema():
+    """Create the shared in-memory schema once for the test session."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
+
+
+@pytest.fixture(autouse=True)
+def shared_test_database(shared_test_schema):
+    """Isolate each test in an outer transaction.
+
+    Sessions use savepoints so application-level commit/rollback calls retain
+    their real semantics without leaking rows into the next test.
+    """
+    connection = engine.connect()
+    transaction = connection.begin()
+    SessionLocal.configure(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+    )
+    try:
+        yield
+    finally:
+        SessionLocal.configure(
+            bind=engine,
+            join_transaction_mode="conditional_savepoint",
+        )
+        if transaction.is_active:
+            transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture(autouse=True)

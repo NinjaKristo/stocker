@@ -11,6 +11,10 @@ import pytest_asyncio
 from celery.exceptions import Retry, SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError
 
+from app.domain.markets.key_markets import (
+    KEY_MARKET_INSTRUMENTS_BY_MARKET,
+    key_market_price_symbols,
+)
 from app.main import app
 
 
@@ -194,6 +198,7 @@ def test_smart_refresh_cache_delegates_to_price_refresh_workflow(monkeypatch):
 
 def test_smart_refresh_cache_allows_in_process_bypass_outside_time_window(monkeypatch):
     import app.tasks.cache_tasks as module
+    from app.services.price_refresh_planning import PriceRefreshPlan
 
     fake_db = MagicMock()
     fake_query = MagicMock()
@@ -215,6 +220,14 @@ def test_smart_refresh_cache_allows_in_process_bypass_outside_time_window(monkey
     monkeypatch.setattr(
         "app.services.bulk_data_fetcher.BulkDataFetcher",
         lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        module,
+        "build_market_price_refresh_plan",
+        lambda *args, **kwargs: PriceRefreshPlan(
+            symbols=(),
+            completion_message="No active symbols found in universe",
+        ),
     )
 
     with module.allow_smart_refresh_time_window_bypass():
@@ -419,15 +432,16 @@ def test_smart_refresh_cache_publishes_running_progress_per_batch(monkeypatch):
         module.smart_refresh_cache, "full", market="US", activity_lifecycle="bootstrap"
     )
 
+    expected_total = len(symbols) + len(key_market_price_symbols("US"))
     assert result["status"] == "completed"
     assert progress_updates[0]["current"] == 0
-    assert progress_updates[0]["total"] == 101
+    assert progress_updates[0]["total"] == expected_total
     assert progress_updates[0]["percent"] == 0
     assert len(fetch_batches) == 1
-    assert len(fetch_batches[0]) == 101
+    assert len(fetch_batches[0]) == expected_total
     assert any(update["message"] == "Batch 1/1 · refreshing prices" for update in progress_updates)
-    assert progress_updates[-1]["current"] == 101
-    assert progress_updates[-1]["total"] == 101
+    assert progress_updates[-1]["current"] == expected_total
+    assert progress_updates[-1]["total"] == expected_total
     assert progress_updates[-1]["percent"] == pytest.approx(100.0)
 
 
@@ -506,15 +520,16 @@ def test_smart_refresh_cache_failure_records_delegated_batch_progress(monkeypatc
 
     assert fetch_calls == 1
     assert progress_updates[-1]["current"] == 0
+    expected_total = len(symbols) + len(key_market_price_symbols("US"))
     fake_price_cache.save_warmup_metadata.assert_called_once_with(
         "failed",
         0,
-        101,
+        expected_total,
         "Soft time limit exceeded",
         market="US",
     )
     assert failures[-1]["current"] == 0
-    assert failures[-1]["total"] == 101
+    assert failures[-1]["total"] == expected_total
 
 
 def test_smart_refresh_cache_delta_prefers_github_daily_bundle_and_skips_live_fetch(monkeypatch):
@@ -670,7 +685,9 @@ def test_shared_smart_refresh_records_success_for_each_symbol_market(monkeypatch
     result = module.smart_refresh_cache.run.__wrapped__(module.smart_refresh_cache, "full")
 
     assert result["status"] == "completed"
-    assert sorted(record["market"] for record in records) == ["HK", "US"]
+    assert sorted(record["market"] for record in records) == sorted(
+        KEY_MARKET_INSTRUMENTS_BY_MARKET
+    )
 
 
 def test_shared_smart_refresh_retries_failed_symbols_by_symbol_market(monkeypatch):
@@ -716,9 +733,12 @@ def test_shared_smart_refresh_retries_failed_symbols_by_symbol_market(monkeypatc
         module,
         "_fetch_with_backoff",
         lambda _fetcher, batch_symbols, **kwargs: {
-            "AAPL": {"has_error": True, "error": "rate limited", "price_data": None},
-            "0700.HK": {"has_error": True, "error": "rate limited", "price_data": None},
-            "MSFT": _success_result("MSFT"),
+            symbol: (
+                {"has_error": True, "error": "rate limited", "price_data": None}
+                if symbol in {"AAPL", "0700.HK"}
+                else _success_result(symbol)
+            )
+            for symbol in batch_symbols
         },
     )
     monkeypatch.setattr(
@@ -731,7 +751,7 @@ def test_shared_smart_refresh_retries_failed_symbols_by_symbol_market(monkeypatc
 
     result = module.smart_refresh_cache.run.__wrapped__(module.smart_refresh_cache, "full")
 
-    assert result["status"] == "partial"
+    assert result["status"] == "completed"
     assert sorted(retry_calls, key=lambda call: call["market"]) == [
         {"symbols": ["0700.HK"], "market": "HK", "attempt": 1},
         {"symbols": ["AAPL"], "market": "US", "attempt": 1},
@@ -902,9 +922,14 @@ def test_bootstrap_smart_refresh_uses_short_failed_symbol_retry_delay(monkeypatc
     )
 
     assert result["status"] == "partial"
+    expected_symbols = list(dict.fromkeys([
+        "0700.HK",
+        "0005.HK",
+        *key_market_price_symbols("HK"),
+    ]))
     assert retry_calls == [
         {
-            "symbols": ["0700.HK", "0005.HK"],
+            "symbols": expected_symbols,
             "market": "HK",
             "attempt": 1,
             "countdown": 30,

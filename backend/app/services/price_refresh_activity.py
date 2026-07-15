@@ -146,16 +146,19 @@ class PriceRefreshActivityReporter:
         refreshed: int,
         failed: int,
     ) -> None:
-        task.update_state(
-            state="PROGRESS",
-            meta={
-                "current": current,
-                "total": total,
-                "percent": percent,
-                "refreshed": refreshed,
-                "failed": failed,
-            },
-        )
+        # Direct/in-process callers do not have a Celery request id. Calling
+        # update_state in that context makes Celery reject the progress event.
+        if task_id(task):
+            task.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": current,
+                    "total": total,
+                    "percent": percent,
+                    "refreshed": refreshed,
+                    "failed": failed,
+                },
+            )
         price_cache.update_warmup_heartbeat(current, total, percent, market=market)
         self._deps.mark_market_activity_progress_safely(
             db,

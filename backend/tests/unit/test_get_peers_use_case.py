@@ -218,10 +218,10 @@ class TestScanNotFound:
         assert exc_info.value.identifier == "missing"
 
 
-class TestUnboundScanRaises:
-    """Scan exists but has no feature_run_id — raises EntityNotFoundError."""
+class TestUnboundScanFallback:
+    """Scans without a feature run read legacy scan results."""
 
-    def test_unbound_scan_raises_feature_run_not_found(self):
+    def test_unbound_scan_reports_missing_legacy_result(self):
         uow = FakeUnitOfWork()
         uow.scans.create(scan_id="scan-123", status="completed")  # no feature_run_id
         uc = GetPeersUseCase()
@@ -229,7 +229,8 @@ class TestUnboundScanRaises:
         with pytest.raises(EntityNotFoundError) as exc_info:
             uc.execute(uow, _make_query())
 
-        assert exc_info.value.entity == "FeatureRun"
+        assert exc_info.value.entity == "ScanResult"
+        assert exc_info.value.identifier == "AAPL"
 
 
 class TestSymbolNotFound:

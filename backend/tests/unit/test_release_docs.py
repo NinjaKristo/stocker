@@ -9,16 +9,16 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_release_workflow_uses_curated_release_notes() -> None:
-    content = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    content = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     assert "body_path: .github/release-notes.md" in content
     assert "generate_release_notes: true" not in content
 
 
 def test_readme_documents_current_release_compose_flow() -> None:
-    content = (ROOT / "README.md").read_text()
+    content = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "APP_IMAGE_TAG=v1.2.0" in content
+    assert "APP_IMAGE_TAG=v1.3.0" in content
     assert (
         "scripts/docker-compose-enabled-markets.sh --env-file .env.docker "
         "-f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.release.yml pull"
@@ -30,7 +30,7 @@ def test_readme_documents_current_release_compose_flow() -> None:
 
 
 def test_install_docker_uses_current_release_example() -> None:
-    content = (ROOT / "docs" / "INSTALL_DOCKER.md").read_text()
+    content = (ROOT / "docs" / "INSTALL_DOCKER.md").read_text(encoding="utf-8")
 
     assert "Python 3.11+" in content
     assert "STOCKSCREEN_PYTHON" in content
@@ -42,7 +42,7 @@ def test_install_docker_uses_current_release_example() -> None:
 
 
 def test_curated_release_notes_capture_v1_capabilities() -> None:
-    content = (ROOT / ".github" / "release-notes.md").read_text()
+    content = (ROOT / ".github" / "release-notes.md").read_text(encoding="utf-8")
 
     assert "# Stock Scanner v" in content
     assert "multi-market" in content.lower()

@@ -94,7 +94,7 @@ class ThemeMergingService:
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_MODEL_VERSION = "embedding-v1"
     EMBEDDING_DIM = 384
-    DEFAULT_MERGE_MODEL = "minimax/MiniMax-M2.7"
+    DEFAULT_MERGE_MODEL = "groq/qwen/qwen3-32b"
     CANDIDATE_TOP_K = 16
     CANDIDATE_BLOCK_MAX = 96
 

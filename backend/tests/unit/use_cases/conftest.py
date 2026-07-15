@@ -158,9 +158,22 @@ class FakeScanRepository(ScanRepository):
             scan.completed_at = datetime.now()
         self.status_history.append((scan_id, status))
 
-    def list_recent(self, limit: int = 20) -> list[FakeScan]:
+    def list_recent(
+        self,
+        limit: int = 20,
+        market: str | None = None,
+    ) -> list[FakeScan]:
+        rows = self.rows
+        if market:
+            normalized_market = market.strip().upper()
+            rows = [
+                scan
+                for scan in rows
+                if (getattr(scan, "universe_market", None) or "").upper()
+                == normalized_market
+            ]
         return sorted(
-            self.rows,
+            rows,
             key=lambda s: s.started_at or datetime.min,
             reverse=True,
         )[:limit]
@@ -694,7 +707,7 @@ class FakeFeatureRunRepository(FeatureRunRepository):
             runs = [r for r in runs if r.as_of_date <= date_to]
 
         # Sort by created_at DESC
-        runs.sort(key=lambda r: r.created_at, reverse=True)
+        runs.sort(key=lambda r: (r.created_at, r.id), reverse=True)
         runs = runs[:limit]
 
         result = []

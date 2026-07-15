@@ -28,6 +28,9 @@ def test_docker_env_example_documents_zai_settings() -> None:
 def test_docker_compose_forwards_zai_settings_to_theme_services() -> None:
     content = (ROOT / "docker-compose.yml").read_text()
 
-    assert content.count("ZAI_API_KEY=${ZAI_API_KEY:-}") >= 4
-    assert content.count("ZAI_API_KEYS=${ZAI_API_KEYS:-}") >= 4
-    assert content.count("ZAI_API_BASE=${ZAI_API_BASE:-https://api.z.ai/api/paas/v4}") >= 4
+    assert "x-app-env: &app-env" in content
+    assert "ZAI_API_KEY: ${ZAI_API_KEY:-}" in content
+    assert "ZAI_API_KEYS: ${ZAI_API_KEYS:-}" in content
+    assert "ZAI_API_BASE: ${ZAI_API_BASE:-https://api.z.ai/api/paas/v4}" in content
+    assert "x-celery-env: &celery-env\n  <<: *app-env" in content
+    assert "x-worker-common: &worker-common" in content
