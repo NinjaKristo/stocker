@@ -31,6 +31,7 @@ import { DEFAULT_SCAN_DEFAULTS } from '../../../constants/scanDefaults';
 import { buildDefaultScanFilters } from '../defaultFilters';
 import { normalizeScanFilterOptions } from '../filterOptions';
 import { DEFAULT_FILTER_KEY } from '../constants';
+import { keepPreviousScanResults } from '../queryState';
 import ScanControlBar from '../components/ScanControlBar';
 import ScanResultsSection from '../components/ScanResultsSection';
 import { useScanFilterPresets } from '../hooks/useScanFilterPresets';
@@ -373,10 +374,11 @@ function ScanPage() {
   const {
     data: resultsData,
     isLoading: resultsLoading,
+    error: resultsError,
     refetch: refetchResults,
   } = useQuery({
     queryKey: ['scanResults', currentScanId, page, perPage, sortBy, sortOrder, stableFilterKey],
-    queryFn: () => getScanResults(currentScanId, getApiFilterParams()),
+    queryFn: ({ signal }) => getScanResults(currentScanId, getApiFilterParams(), { signal }),
     enabled: Boolean(currentScanId) && (scanStatus === 'completed' || scanStatus === 'cancelled'),
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
@@ -384,7 +386,7 @@ function ScanPage() {
     // only within the same scan — a scan switch (e.g. via the global market
     // selector) must not show another scan's rows while loading.
     placeholderData: (previousData, previousQuery) => (
-      previousQuery?.queryKey?.[1] === currentScanId ? previousData : undefined
+      keepPreviousScanResults(previousData, previousQuery, currentScanId, stableFilterKey)
     ),
   });
 
@@ -659,6 +661,7 @@ function ScanPage() {
         <ScanResultsSection
           resultsLoading={resultsLoading}
           resultsData={resultsData}
+          resultsError={resultsError}
           filters={filters}
           onExport={handleExport}
           page={page}

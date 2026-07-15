@@ -89,8 +89,9 @@ export const cancelScan = async (scanId) => {
  * @param {Object} params - Query parameters (supports all filter types)
  * @returns {Promise<Object>} Paginated scan results
  */
-export const getScanResults = async (scanId, params = {}) => {
+export const getScanResults = async (scanId, params = {}, { signal } = {}) => {
   const response = await apiClient.get(`/v1/scans/${scanId}/results`, {
+    ...(signal ? { signal } : {}),
     params: {
       detail_level: 'table',
       ...params,

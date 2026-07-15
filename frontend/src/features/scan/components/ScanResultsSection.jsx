@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, Paper, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Paper, Typography } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ResultsTable from '../../../components/Scan/ResultsTable';
 
@@ -22,6 +22,7 @@ function isFiltered(filters) {
 export default function ScanResultsSection({
   resultsLoading,
   resultsData,
+  resultsError,
   filters,
   onExport,
   page,
@@ -41,6 +42,18 @@ export default function ScanResultsSection({
         <CircularProgress />
         <Typography sx={{ ml: 2 }}>Loading results...</Typography>
       </Box>
+    );
+  }
+
+  if (resultsError) {
+    const detail = resultsError.response?.data?.detail || resultsError.message;
+    return (
+      <Alert
+        severity="error"
+        action={<Button color="inherit" size="small" onClick={onRetry}>Retry</Button>}
+      >
+        Results could not be loaded{detail ? `: ${detail}` : '.'} Cached rows are hidden so they are not mistaken for the active filters.
+      </Alert>
     );
   }
 

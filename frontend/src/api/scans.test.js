@@ -41,6 +41,21 @@ describe('scan api helpers', () => {
     });
   });
 
+  it('forwards the query abort signal to axios', async () => {
+    apiClient.get.mockResolvedValueOnce({ data: { results: [] } });
+    const controller = new AbortController();
+
+    await getScanResults('scan-1', { page: 1 }, { signal: controller.signal });
+
+    expect(apiClient.get).toHaveBeenCalledWith('/v1/scans/scan-1/results', {
+      signal: controller.signal,
+      params: {
+        detail_level: 'table',
+        page: 1,
+      },
+    });
+  });
+
   it('defaults /result/{symbol} to core detail level', async () => {
     apiClient.get.mockResolvedValueOnce({ data: { symbol: 'AAPL' } });
 
