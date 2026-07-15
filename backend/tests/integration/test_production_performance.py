@@ -7,7 +7,23 @@ This test will:
 2. Run a bulk scan with 30 stocks (COLD cache)
 3. Run the same scan again (HOT cache)
 4. Compare performance metrics
+
+Under pytest this destructive live-server smoke is opt-in via
+``RUN_PRODUCTION_PERFORMANCE_TEST=1``. Direct script execution remains
+available for an operator who intentionally wants to clear caches and run it.
 """
+import os
+
+if __name__ != "__main__":
+    import pytest
+
+    pytestmark = [pytest.mark.integration, pytest.mark.slow]
+    if os.getenv("RUN_PRODUCTION_PERFORMANCE_TEST") != "1":
+        pytest.skip(
+            "destructive live performance smoke; set RUN_PRODUCTION_PERFORMANCE_TEST=1 to run",
+            allow_module_level=True,
+        )
+
 import time
 import requests
 import redis
