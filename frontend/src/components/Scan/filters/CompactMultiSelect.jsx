@@ -1,6 +1,7 @@
 import { Box, Autocomplete, TextField, Typography, Chip, IconButton, Tooltip } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
+import Acronym from '../../common/Acronym';
 
 /**
  * Compact multi-select autocomplete for Industry/Sector filters
@@ -33,7 +34,7 @@ function CompactMultiSelect({
           color="text.secondary"
           sx={{ fontSize: '0.7rem', flexGrow: 1 }}
         >
-          {label}
+          <Acronym term={label} />
         </Typography>
         {showModeToggle && (
           <Tooltip title={isExcludeMode ? 'Excluding selected (click to include)' : 'Including selected (click to exclude)'}>

@@ -1,4 +1,5 @@
 import { Box, FormControl, Select, MenuItem, Typography } from '@mui/material';
+import Acronym from '../../common/Acronym';
 
 /**
  * Compact dropdown select for categorical filters
@@ -22,7 +23,7 @@ function CompactSelect({ label, value, options, onChange, placeholder = 'All' })
         color="text.secondary"
         sx={{ display: 'block', mb: 0.5, fontSize: '0.7rem' }}
       >
-        {label}
+        <Acronym term={label} />
       </Typography>
       <FormControl size="small" fullWidth>
         <Select

@@ -152,33 +152,8 @@ describe('AssistantChatContext', () => {
     });
   });
 
-  it('restores the stored conversation on mount', async () => {
+  it('starts a fresh session instead of restoring an old test conversation', async () => {
     window.localStorage.setItem('assistant_conversation_id', 'conv-restore');
-    getConversation.mockResolvedValueOnce({
-      id: 2,
-      conversation_id: 'conv-restore',
-      title: 'Restored assistant thread',
-      created_at: '2026-04-09T00:00:00Z',
-      updated_at: '2026-04-09T00:05:00Z',
-      is_active: true,
-      message_count: 2,
-      messages: [
-        {
-          id: 9,
-          conversation_id: 'conv-restore',
-          role: 'user',
-          content: 'How does breadth look?',
-          created_at: '2026-04-09T00:04:00Z',
-        },
-        {
-          id: 10,
-          conversation_id: 'conv-restore',
-          role: 'assistant',
-          content: 'Breadth remains constructive.',
-          created_at: '2026-04-09T00:05:00Z',
-        },
-      ],
-    });
 
     renderWithProviders(
       <AssistantChatProvider>
@@ -186,13 +161,10 @@ describe('AssistantChatContext', () => {
       </AssistantChatProvider>,
     );
 
-    await waitFor(() => {
-      expect(getConversation).toHaveBeenCalledWith('conv-restore');
-      expect(screen.getByTestId('conversation-id')).toHaveTextContent('conv-restore');
-      expect(screen.getByTestId('conversation-title')).toHaveTextContent('Restored assistant thread');
-      expect(screen.getByTestId('message-log')).toHaveTextContent('user:How does breadth look?');
-      expect(screen.getByTestId('message-log')).toHaveTextContent('assistant:Breadth remains constructive.');
-    });
+    expect(getConversation).not.toHaveBeenCalled();
+    expect(screen.getByTestId('conversation-id')).toHaveTextContent('none');
+    expect(screen.getByTestId('conversation-title')).toHaveTextContent('Assistant');
+    expect(screen.getByTestId('message-log')).toBeEmptyDOMElement();
   });
 
   it('keeps live tool-call args visible while streaming', async () => {

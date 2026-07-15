@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -18,7 +17,6 @@ import {
 } from '../api/assistant';
 import { useRuntime } from './RuntimeContext';
 
-const STORAGE_KEY = 'assistant_conversation_id';
 const AssistantChatContext = createContext(null);
 
 const summarizeTitle = (content) => {
@@ -39,10 +37,7 @@ const buildStreamingDraft = () => ({
 
 export function AssistantChatProvider({ children }) {
   const { auth, features } = useRuntime();
-  const [conversationId, setConversationId] = useState(() => {
-    if (typeof window === 'undefined') return null;
-    return window.localStorage.getItem(STORAGE_KEY);
-  });
+  const [conversationId, setConversationId] = useState(null);
   const [conversationTitle, setConversationTitle] = useState('Assistant');
   const [messages, setMessages] = useState([]);
   const [draftMessage, setDraftMessage] = useState(null);
@@ -50,7 +45,6 @@ export function AssistantChatProvider({ children }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef(null);
   const draftRef = useRef(null);
-  const initialConversationIdRef = useRef(conversationId);
   const assistantEnabled = Boolean(features?.chatbot);
   const authSatisfied = !auth?.required || Boolean(auth?.authenticated);
 
@@ -62,15 +56,6 @@ export function AssistantChatProvider({ children }) {
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (conversationId) {
-      window.localStorage.setItem(STORAGE_KEY, conversationId);
-      return;
-    }
-    window.localStorage.removeItem(STORAGE_KEY);
-  }, [conversationId]);
 
   const resetDraft = useCallback(() => {
     draftRef.current = null;
@@ -116,13 +101,6 @@ export function AssistantChatProvider({ children }) {
       setIsLoadingConversation(false);
     }
   }, [resetDraft]);
-
-  useEffect(() => {
-    const initialConversationId = initialConversationIdRef.current;
-    initialConversationIdRef.current = null;
-    if (!initialConversationId) return;
-    loadConversation(initialConversationId).catch(() => {});
-  }, [loadConversation]);
 
   const ensureConversation = useCallback(async () => {
     if (conversationId) return conversationId;

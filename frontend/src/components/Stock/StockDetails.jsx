@@ -47,6 +47,7 @@ import {
 } from '../../utils/formatUtils';
 import { resolveMarketCapDisplay } from '../../utils/marketCapUtils';
 import { useStrategyProfileData } from '../../contexts/StrategyProfileContext';
+import { preferredSetupBacktestUrl } from '../../features/backplay/preferredSetup';
 
 const CriteriaList = ({ title, items, emptyText }) => (
   <Box sx={{ flex: 1 }}>
@@ -631,7 +632,15 @@ function StockDetails() {
                 {regimeActions.preferred_setups?.length ? (
                   <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
                     {regimeActions.preferred_setups.map((setup, index) => (
-                      <Chip key={`${setup}-${index}`} label={setup} size="small" variant="outlined" />
+                      <Chip
+                        key={`${setup}-${index}`}
+                        label={setup}
+                        size="small"
+                        variant="outlined"
+                        clickable
+                        onClick={() => navigate(preferredSetupBacktestUrl(symbol, setup))}
+                        title="Open this setup as a prefilled strategy backtest"
+                      />
                     ))}
                   </Stack>
                 ) : (

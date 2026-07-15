@@ -94,4 +94,24 @@ describe('StrategyTestPanel', () => {
     expect(screen.getAllByText('AMD')).toHaveLength(2);
     expect(screen.getByText('RS').closest('.MuiChip-label')).toHaveTextContent('RS: 90 vs 91');
   });
+
+  it('prefills the mapped strategy and keeps the preferred setup visible', async () => {
+    mockGetBuiltinStrategies.mockResolvedValue({
+      builtins: [
+        { id: 'breakout', name: 'Breakout', description: 'Breakout rule', defaults: {} },
+        { id: 'ma_cross', name: 'MA Cross', description: 'Moving-average rule', defaults: {} },
+      ],
+    });
+
+    renderWithProviders(
+      <StrategyTestPanel
+        prefillSymbol="NVDA"
+        prefillStrategy="ma_cross"
+        preferredSetup="Tight pullbacks"
+      />,
+    );
+
+    expect(await screen.findByText('Moving-average rule')).toBeInTheDocument();
+    expect(screen.getByText(/Preferred setup:/)).toHaveTextContent('Tight pullbacks');
+  });
 });

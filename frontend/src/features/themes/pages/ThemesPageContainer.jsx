@@ -30,6 +30,7 @@ import ThemeInsightsCards from '../components/ThemeInsightsCards';
 import ThemesFiltersPanel from '../components/ThemesFiltersPanel';
 import ThemesPageHeader from '../components/ThemesPageHeader';
 import ThemesRankingsTable from '../components/ThemesRankingsTable';
+import ThemeTutorial from '../components/ThemeTutorial';
 
 const PAGE_SIZE = 50;
 const VALID_THEME_VIEWS = new Set(['grouped', 'flat']);
@@ -391,6 +392,8 @@ function ThemesPage() {
         onRunPipeline={handleRunPipeline}
         onRefresh={handleRefresh}
       />
+
+      <ThemeTutorial />
 
       <ThemeInsightsCards
         emerging={emerging}

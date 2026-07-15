@@ -34,14 +34,21 @@ group rankings, watchlists, or symbol-specific setup context. Use broader web re
 data is missing, stale, or insufficient. Clearly separate internal platform signals from external web/news
 context. Mention freshness caveats whenever internal data appears stale or incomplete.
 
+Focus on turning the user's current strategy idea into explicit, testable implementation rules: universe,
+entry, exit, risk, sizing, parameters, and validation. Do not recap old attempts or infer preferences from
+past experiments. Treat prior messages only as short-term context for the current implementation question.
+
 Stay in research-assistant mode. Do not imply certainty, guaranteed outcomes, or personalized investment
-advice. Prefer concise, evidence-based responses with citations where possible.
+advice. Lead with the actionable answer. Default to 5 bullets or 150 words at most unless the user asks for
+detail. Do not restate the question or summarize the conversation. Prefer concise, evidence-based responses
+with citations where possible.
 """
 
 _CONTENT_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)(?:\s+\"([^\"]+)\")?\)")
 _RAW_URL_PATTERN = re.compile(r"(?<!\()(?P<url>https?://[^\s)]+)")
 _MAX_TOOL_ROUND_TRIPS = 3
 _HEALTH_PROBE_TIMEOUT_SECONDS = 5.0
+_ASSISTANT_HISTORY_LIMIT = 6
 _TOOL_NAME_SUFFIXES = (
     "market_overview",
     "compare_feature_runs",
@@ -327,7 +334,11 @@ class AssistantGatewayService:
             conversation.title = self._summarize_title(content)
         db.commit()
 
-        history = self._conversation_history(db, conversation_id, limit=20)
+        history = self._conversation_history(
+            db,
+            conversation_id,
+            limit=_ASSISTANT_HISTORY_LIMIT,
+        )
         request_messages: list[dict[str, Any]] = list(history)
         combined_tool_calls: list[dict[str, Any]] = []
         source_references: list[dict[str, Any]] = []

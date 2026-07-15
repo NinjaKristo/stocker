@@ -1,4 +1,5 @@
 import { Box, ToggleButtonGroup, ToggleButton, Typography } from '@mui/material';
+import Acronym from '../../common/Acronym';
 
 const ALL_VALUE = '__all__';
 
@@ -26,7 +27,7 @@ function CompactCheckbox({ label, value, onChange }) {
         color="text.secondary"
         sx={{ display: 'block', mb: 0.5, fontSize: '0.7rem' }}
       >
-        {label}
+        <Acronym term={label} />
       </Typography>
       <ToggleButtonGroup
         value={value ?? ALL_VALUE}

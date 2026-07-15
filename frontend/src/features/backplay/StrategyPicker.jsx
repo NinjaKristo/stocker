@@ -38,6 +38,11 @@ export const DEFAULT_STRATEGY = {
 
 const SCRIPT_PLACEHOLDER_ENTRY = 'close > Highest(close, 20) and volume > 1.5 * SMA(volume, 50)';
 const SCRIPT_PLACEHOLDER_EXIT = 'close < Lowest(close, 10)';
+const BUILTIN_FALLBACK_NAMES = {
+  breakout: 'Breakout',
+  ma_cross: 'Moving Average Cross',
+  buy_hold: 'Buy & Hold',
+};
 
 function ScriptField({ label, placeholder, value, onChange, helper }) {
   const [feedback, setFeedback] = useState(null);
@@ -137,7 +142,11 @@ function StrategyPicker({ value, onChange }) {
                 {entry.name}
               </MenuItem>
             ))}
-            {builtins.length === 0 && <MenuItem value="breakout">Breakout</MenuItem>}
+            {!selectedBuiltin && (
+              <MenuItem value={strategy.builtin_id || 'breakout'}>
+                {BUILTIN_FALLBACK_NAMES[strategy.builtin_id] || 'Breakout'}
+              </MenuItem>
+            )}
           </TextField>
           {selectedBuiltin && (
             <Typography variant="body2" color="text.secondary">

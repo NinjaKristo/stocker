@@ -1,7 +1,7 @@
 import { Box, Typography } from '@mui/material';
 import TickerLink from './TickerLink';
 
-function TickerCell({ symbol, companyName, align = 'left', market = null }) {
+function TickerCell({ symbol, companyName, industry = null, align = 'left', market = null }) {
   const alignItems = align === 'center' ? 'center' : 'flex-start';
   const textAlign = align === 'center' ? 'center' : 'left';
 
@@ -43,7 +43,12 @@ function TickerCell({ symbol, companyName, align = 'left', market = null }) {
         variant="body2"
         sx={{ fontWeight: 600, lineHeight: 1.2 }}
       >
-        <TickerLink symbol={symbol} companyName={companyName} market={market} />
+        <TickerLink
+          symbol={symbol}
+          companyName={companyName}
+          industry={industry}
+          market={market}
+        />
       </Typography>
       {companyName ? (
         <Typography

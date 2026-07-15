@@ -4,6 +4,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import TickerLink from './TickerLink';
 
+vi.mock('../../api/stocks', () => ({
+  getStockInfo: vi.fn().mockResolvedValue({
+    name: 'Fetched Company',
+    industry: 'Fetched Industry',
+  }),
+}));
+
 const renderInRouter = (ui) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 describe('TickerLink', () => {
@@ -33,13 +40,31 @@ describe('TickerLink', () => {
     expect(container.querySelector('a')).toBeNull();
   });
 
-  it('shows a delayed hover bubble with company and market context', async () => {
+  it('shows a delayed hover bubble with company, industry, and market context', async () => {
     const user = userEvent.setup();
-    renderInRouter(<TickerLink symbol="NVDA" companyName="NVIDIA Corp" market="US" />);
+    renderInRouter(
+      <TickerLink
+        symbol="NVDA"
+        companyName="NVIDIA Corp"
+        industry="Semiconductors"
+        market="US"
+      />,
+    );
 
     await user.hover(screen.getByRole('link', { name: 'NVDA' }));
 
     expect(await screen.findByText('NVIDIA Corp')).toBeInTheDocument();
-    expect(screen.getByText(/US ticker/)).toBeInTheDocument();
+    expect(screen.getByText('Industry: Semiconductors')).toBeInTheDocument();
+    expect(screen.getByText(/US market/)).toBeInTheDocument();
+  });
+
+  it('loads missing company and industry metadata when the ticker is hovered', async () => {
+    const user = userEvent.setup();
+    renderInRouter(<TickerLink symbol="META" />);
+
+    await user.hover(screen.getByRole('link', { name: 'META' }));
+
+    expect(await screen.findByText('Fetched Company')).toBeInTheDocument();
+    expect(screen.getByText('Industry: Fetched Industry')).toBeInTheDocument();
   });
 });

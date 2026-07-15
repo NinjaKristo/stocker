@@ -35,6 +35,25 @@ def assistant_settings():
     )
 
 
+def test_chat_payload_requires_concise_strategy_focused_answers(
+    session_factory,
+    assistant_settings,
+):
+    service = AssistantGatewayService(
+        app_settings=assistant_settings,
+        session_factory=session_factory,
+    )
+
+    payload = service._build_chat_payload(  # noqa: SLF001
+        [{"role": "user", "content": "Implement my breakout strategy."}],
+    )
+
+    system_prompt = payload["messages"][0]["content"]
+    assert "5 bullets or 150 words" in system_prompt
+    assert "Do not recap old attempts" in system_prompt
+    assert "explicit, testable implementation rules" in system_prompt
+
+
 @pytest.mark.asyncio
 async def test_health_reports_available(session_factory, assistant_settings):
     def handler(request: httpx.Request) -> httpx.Response:

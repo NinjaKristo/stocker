@@ -61,14 +61,16 @@ function buildSummary(activity, { isPending = false, isError = false } = {}) {
   }
 
   if ((summary.active_market_count ?? 0) > 0) {
-    const activeLabel = summary.active_market_count === 1 ? '1 market active' : `${summary.active_market_count} markets active`;
+    const activeLabel = summary.active_market_count === 1
+      ? '1 refresh running'
+      : `${summary.active_market_count} refreshes running`;
     return {
       badge: String(summary.active_market_count),
-      badgeColor: 'secondary',
+      badgeColor: 'info',
       title: activeLabel,
       detail: activeMarket
         ? `${activeMarket.market} · ${activeMarket.stage_label || activeMarket.message || activeMarket.status}`
-        : 'Data refresh in progress',
+        : 'Market data refresh in progress',
     };
   }
 

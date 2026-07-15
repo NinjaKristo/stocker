@@ -15,12 +15,21 @@ import ComparisonReport from './ComparisonReport';
 import SimilarStocksReport from './SimilarStocksReport';
 import StrategyPicker, { DEFAULT_STRATEGY } from './StrategyPicker';
 
-function StrategyTestPanel({ prefillSymbol = '' }) {
+const SUPPORTED_PREFILL_STRATEGIES = new Set(['breakout', 'ma_cross', 'buy_hold']);
+
+function buildInitialStrategy(prefillStrategy) {
+  const builtinId = SUPPORTED_PREFILL_STRATEGIES.has(prefillStrategy)
+    ? prefillStrategy
+    : DEFAULT_STRATEGY.builtin_id;
+  return { ...DEFAULT_STRATEGY, builtin_id: builtinId, params: {} };
+}
+
+function StrategyTestPanel({ prefillSymbol = '', prefillStrategy = '', preferredSetup = '' }) {
   const [symbol, setSymbol] = useState(prefillSymbol);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [startingCash, setStartingCash] = useState(10000);
-  const [strategy, setStrategy] = useState(DEFAULT_STRATEGY);
+  const [strategy, setStrategy] = useState(() => buildInitialStrategy(prefillStrategy));
 
   const mutation = useMutation({ mutationFn: runBackplay });
   const comparisonMutation = useMutation({ mutationFn: runBackplayComparison });
@@ -47,6 +56,12 @@ function StrategyTestPanel({ prefillSymbol = '' }) {
     <Stack spacing={2}>
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
+          {preferredSetup && (
+            <Alert severity="info" icon={false}>
+              Preferred setup: <strong>{preferredSetup}</strong>. Review the mapped rule and guardrails,
+              then run the backtest.
+            </Alert>
+          )}
           <Typography variant="body2" color="text.secondary">
             Pick a stock and a rule; the test walks through past days one at a time, buying and
             selling exactly when the rule says — then shows what would have happened.

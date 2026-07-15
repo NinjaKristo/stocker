@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import TickerLink from '../common/TickerLink';
+import Acronym from '../common/Acronym';
 
 function formatPercentValue(value) {
   if (value == null) return '-';
@@ -92,10 +93,10 @@ export function ValidationRecentEventsTable({ events, showSourceKind = true }) {
             {showSourceKind && <TableCell>Source</TableCell>}
             <TableCell>Event</TableCell>
             <TableCell>Entry</TableCell>
-            <TableCell align="right">1S</TableCell>
-            <TableCell align="right">5S</TableCell>
-            <TableCell align="right">MFE</TableCell>
-            <TableCell align="right">MAE</TableCell>
+            <TableCell align="right"><Acronym term="1S" /></TableCell>
+            <TableCell align="right"><Acronym term="5S" /></TableCell>
+            <TableCell align="right"><Acronym term="MFE" /></TableCell>
+            <TableCell align="right"><Acronym term="MAE" /></TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -103,7 +104,12 @@ export function ValidationRecentEventsTable({ events, showSourceKind = true }) {
             <TableRow key={`${event.source_ref}:${event.event_at}:${event.attributes?.symbol || 'symbol'}:${index}`}>
               <TableCell>
                 {event.attributes?.symbol ? (
-                  <TickerLink symbol={event.attributes.symbol} />
+                  <TickerLink
+                    symbol={event.attributes.symbol}
+                    companyName={event.attributes.company_name || event.attributes.name}
+                    industry={event.attributes.ibd_industry_group || event.attributes.industry}
+                    market={event.attributes.market}
+                  />
                 ) : '-'}
               </TableCell>
               {showSourceKind && (

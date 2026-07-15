@@ -25,6 +25,8 @@ import FieldAvailabilityChip from './FieldAvailabilityChip';
 import MarketBadge from './MarketBadge';
 import MarketThemesList from '../Stock/MarketThemesList';
 import AddToWatchlistMenu from '../common/AddToWatchlistMenu';
+import TickerLink from '../common/TickerLink';
+import Acronym from '../common/Acronym';
 import {
   getStageColor,
   getRatingColor,
@@ -196,7 +198,12 @@ const VirtualTableRow = memo(function VirtualTableRow({
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, whiteSpace: 'nowrap' }}>
             <Typography component="span" variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2, flexShrink: 0 }}>
-              {row.symbol}
+              <TickerLink
+                symbol={row.symbol}
+                companyName={row.company_name}
+                industry={row.ibd_industry_group || row.gics_industry}
+                market={row.market}
+              />
             </Typography>
             <MarketBadge market={row.market} exchange={row.exchange} />
             <FieldAvailabilityChip
@@ -622,10 +629,10 @@ function ResultsTable({
                       direction={sortBy === column.id ? sortOrder : 'asc'}
                       onClick={() => handleRequestSort(column.id)}
                     >
-                      {column.label}
+                      <Acronym term={column.label} />
                     </TableSortLabel>
                   ) : (
-                    column.label
+                    <Acronym term={column.label} />
                   )}
                 </TableCell>
               ))}

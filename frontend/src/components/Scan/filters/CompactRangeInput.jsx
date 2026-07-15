@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, TextField, Typography } from '@mui/material';
+import Acronym from '../../common/Acronym';
 
 /**
  * Compact min/max number input for filtering
@@ -63,7 +64,7 @@ function CompactRangeInput({
         color="text.secondary"
         sx={{ display: 'block', mb: 0.5, fontSize: '0.7rem' }}
       >
-        {label}
+        <Acronym term={label} />
       </Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <TextField

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -23,8 +24,18 @@ import StrategyTestPanel from '../features/backplay/StrategyTestPanel';
 const LOOKBACK_OPTIONS = [30, 90, 180];
 
 function ValidationPage() {
-  const [section, setSection] = useState('scorecard');
-  const [backplayMode, setBackplayMode] = useState('replay');
+  const [searchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section');
+  const requestedMode = searchParams.get('mode');
+  const prefillSymbol = searchParams.get('symbol') || '';
+  const prefillStrategy = searchParams.get('strategy') || '';
+  const preferredSetup = searchParams.get('setup') || '';
+  const [section, setSection] = useState(
+    requestedSection === 'backplay' || requestedSection === 'paper' ? requestedSection : 'scorecard',
+  );
+  const [backplayMode, setBackplayMode] = useState(
+    ['replay', 'strategy', 'scan'].includes(requestedMode) ? requestedMode : 'replay',
+  );
   const [sourceKind, setSourceKind] = useState('scan_pick');
   const [lookbackDays, setLookbackDays] = useState(90);
 
@@ -137,7 +148,13 @@ function ValidationPage() {
             <Divider sx={{ mt: 1.5 }} />
           </Paper>
           {backplayMode === 'replay' && <ReplayPanel />}
-          {backplayMode === 'strategy' && <StrategyTestPanel />}
+          {backplayMode === 'strategy' && (
+            <StrategyTestPanel
+              prefillSymbol={prefillSymbol}
+              prefillStrategy={prefillStrategy}
+              preferredSetup={preferredSetup}
+            />
+          )}
           {backplayMode === 'scan' && <ScanTopTenPanel />}
         </Stack>
       )}

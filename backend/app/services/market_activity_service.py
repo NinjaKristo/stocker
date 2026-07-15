@@ -465,9 +465,16 @@ def _overlay_stale_runtime_activity(record: dict[str, Any]) -> dict[str, Any]:
         return record
     if typed_record.stage_key not in DATA_FETCH_RUNTIME_STAGE_KEYS:
         return record
-    if _running_activity_has_live_owner(typed_record):
+    current_task = _live_runtime_activity_task(typed_record)
+    if isinstance(current_task, dict):
         return record
-    reason = f"No live data-fetch lock owns task {typed_record.task_id or 'unknown'}."
+    if current_task is _LIVE_RUNTIME_TASK_LOOKUP_FAILED:
+        reason = (
+            "The data-fetch lock could not confirm an owner for stale task "
+            f"{typed_record.task_id or 'unknown'}."
+        )
+    else:
+        reason = f"No live data-fetch lock owns task {typed_record.task_id or 'unknown'}."
     return stale_runtime_activity_payload(typed_record, reason)
 
 

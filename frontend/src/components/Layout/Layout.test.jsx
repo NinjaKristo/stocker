@@ -94,8 +94,10 @@ describe('Layout', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText('1 market active')).toBeInTheDocument();
+    expect(screen.getByText('1 refresh running')).toBeInTheDocument();
     expect(screen.getByText('HK · Fundamentals Refresh')).toBeInTheDocument();
+    expect(screen.getByText('1', { selector: '.MuiChip-label' }).closest('.MuiChip-root'))
+      .toHaveClass('MuiChip-colorInfo');
     expect(screen.queryByRole('link', { name: /digest/i })).not.toBeInTheDocument();
   });
 

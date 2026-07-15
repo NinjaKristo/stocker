@@ -1,5 +1,5 @@
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '../../test/renderWithProviders';
@@ -219,6 +219,7 @@ describe('StockDetails', () => {
       <MemoryRouter initialEntries={['/stocks/NVDA']}>
         <Routes>
           <Route path="/stocks/:ticker" element={<StockDetails />} />
+          <Route path="/validation" element={<div data-testid="strategy-backtest-page" />} />
         </Routes>
       </MemoryRouter>
     );
@@ -237,6 +238,10 @@ describe('StockDetails', () => {
     expect(screen.getByText('Rating: Buy')).toBeInTheDocument();
     expect(screen.getByTestId('candlestick-chart')).toHaveTextContent('NVDA');
     expect(candlestickChartPropsSpy.mock.calls.at(-1)?.[0]?.dataUpdatedAtOverride).toBeUndefined();
+
+    fireEvent.click(screen.getByRole('button', { name: /Event Risk & Action Plan/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stage 2 breakouts' }));
+    expect(screen.getByTestId('strategy-backtest-page')).toBeInTheDocument();
   }, 20000);
 
   it('renders degraded workspace payloads without decision or regime cards throwing', async () => {

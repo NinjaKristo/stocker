@@ -1123,6 +1123,45 @@ def test_runtime_activity_marks_stale_price_refresh_without_live_lock(db_session
     assert payload["summary"]["status"] == "warning"
 
 
+def test_runtime_activity_marks_stale_when_lock_owner_lookup_fails(db_session, monkeypatch):
+    from app.services import market_activity_service as module
+
+    module.mark_market_activity_started(
+        db_session,
+        market="US",
+        stage_key="prices",
+        lifecycle="daily_refresh",
+        task_name="smart_refresh_cache",
+        task_id="unverifiable-task",
+        message="Refreshing prices",
+    )
+    setting = module._get_setting(db_session, module._activity_key("US"))  # noqa: SLF001
+    activity = json.loads(setting.value)
+    activity["updated_at"] = (
+        datetime.now(timezone.utc) - timedelta(minutes=45)
+    ).isoformat()
+    setting.value = json.dumps(activity)
+    db_session.commit()
+    monkeypatch.setattr(
+        module,
+        "get_runtime_bootstrap_status",
+        lambda _db: _bootstrap_status(required=False, enabled=["US"], state="ready"),
+    )
+
+    def _raise_lock_error():
+        raise RuntimeError("lock backend unavailable")
+
+    monkeypatch.setattr(module, "get_data_fetch_lock", _raise_lock_error)
+
+    payload = module.get_runtime_activity_status(db_session)
+
+    us_market = next(item for item in payload["markets"] if item["market"] == "US")
+    assert us_market["status"] == "stale"
+    assert "could not confirm an owner" in us_market["message"]
+    assert payload["summary"]["active_market_count"] == 0
+    assert payload["summary"]["status"] == "warning"
+
+
 def test_runtime_activity_status_surfaces_failed_market_stage(db_session, monkeypatch):
     from app.services import market_activity_service as module
 

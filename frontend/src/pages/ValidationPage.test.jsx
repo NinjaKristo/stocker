@@ -81,6 +81,18 @@ describe('ValidationPage', () => {
     expect(screen.getByRole('button', { name: 'Run backtest' })).toBeInTheDocument();
   });
 
+  it('opens a symbol and preferred setup directly in Strategy Test', () => {
+    renderWithProviders(
+      <MemoryRouter initialEntries={['/validation?section=backplay&mode=strategy&symbol=NVDA&strategy=ma_cross&setup=Tight+pullbacks']}>
+        <ValidationPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Strategy Test' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Stock')).toHaveValue('NVDA');
+    expect(screen.getByText(/Preferred setup:/)).toHaveTextContent('Preferred setup: Tight pullbacks');
+  });
+
   it('updates the query when source and lookback controls change', async () => {
     getValidationOverview
       .mockResolvedValueOnce({
