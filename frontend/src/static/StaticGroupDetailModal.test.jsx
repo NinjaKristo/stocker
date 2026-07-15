@@ -1,5 +1,6 @@
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import StaticGroupDetailModal from './StaticGroupDetailModal';
@@ -37,15 +38,17 @@ const detail = {
 };
 
 const renderModal = (props = {}) => render(
-  <ThemeProvider theme={createTheme()}>
-    <StaticGroupDetailModal
-      group="Semiconductors"
-      detail={detail}
-      open
-      onClose={vi.fn()}
-      {...props}
-    />
-  </ThemeProvider>
+  <MemoryRouter>
+    <ThemeProvider theme={createTheme()}>
+      <StaticGroupDetailModal
+        group="Semiconductors"
+        detail={detail}
+        open
+        onClose={vi.fn()}
+        {...props}
+      />
+    </ThemeProvider>
+  </MemoryRouter>
 );
 
 describe('StaticGroupDetailModal', () => {

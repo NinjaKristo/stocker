@@ -118,7 +118,7 @@ describe('DailyMarketSnapshotTab', () => {
   });
 
   it('renders all sections from one aggregated snapshot request', async () => {
-    renderWithProviders(<DailyMarketSnapshotTab />);
+    renderWithProviders(<DailyMarketSnapshotTab />, { withRouter: true });
 
     expect(await screen.findByText('LIVE')).toBeInTheDocument();
     expect(getDailySnapshot).toHaveBeenCalledTimes(1);
@@ -149,7 +149,7 @@ describe('DailyMarketSnapshotTab', () => {
       results: [{ ...liveRow, symbol: 'BIG', market_cap_usd: 5_000_000_000 }],
     });
 
-    renderWithProviders(<DailyMarketSnapshotTab />);
+    renderWithProviders(<DailyMarketSnapshotTab />, { withRouter: true });
 
     expect(await screen.findByText('LIVE')).toBeInTheDocument();
 
@@ -176,7 +176,7 @@ describe('DailyMarketSnapshotTab', () => {
   it('shows an error state when the snapshot fails to load', async () => {
     getDailySnapshot.mockRejectedValue(new Error('snapshot failed'));
 
-    renderWithProviders(<DailyMarketSnapshotTab />);
+    renderWithProviders(<DailyMarketSnapshotTab />, { withRouter: true });
 
     expect(await screen.findByText('Failed to load the daily snapshot.')).toBeInTheDocument();
   });
@@ -204,14 +204,14 @@ describe('DailyMarketSnapshotTab', () => {
       },
     }));
 
-    renderWithProviders(<DailyMarketSnapshotTab />);
+    renderWithProviders(<DailyMarketSnapshotTab />, { withRouter: true });
 
     expect(await screen.findByText('0700.HK')).toBeInTheDocument();
     expect(screen.getByText('$500.0B')).toBeInTheDocument();
     expect(screen.queryByText('HK$3.9T')).not.toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.click(screen.getByText('0700.HK'));
+    await user.click(screen.getByText('0700.HK').closest('tr'));
 
     await waitFor(() => {
       expect(chartModalSpy).toHaveBeenLastCalledWith(

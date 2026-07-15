@@ -239,7 +239,7 @@ describe('StaticHomePage', () => {
       },
     ];
 
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     expect(await screen.findByText('VALID')).toBeInTheDocument();
     expect(screen.queryByText('NULLS')).not.toBeInTheDocument();
@@ -256,7 +256,7 @@ describe('StaticHomePage', () => {
     scanChunkPayload.rows[0].price_trend = 1;
     scanChunkPayload.rows[0].price_change_1d = 12.3;
 
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     expect(await screen.findByText('0700.HK')).toBeInTheDocument();
     expect(priceSparklineSpy).toHaveBeenCalledWith(expect.objectContaining({
@@ -268,7 +268,7 @@ describe('StaticHomePage', () => {
   });
 
   it('loads top candidates from the static scan bundle, filters by market cap, and keeps chart navigation aligned', async () => {
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     expect(await screen.findByText('0700.HK')).toBeInTheDocument();
     expect(screen.getAllByText('MCap').length).toBeGreaterThan(0);
@@ -288,7 +288,7 @@ describe('StaticHomePage', () => {
     expect(screen.getByText('NVDA')).toBeInTheDocument();
     expect(screen.getByText('AAPL')).toBeInTheDocument();
 
-    await user.click(screen.getByText('NVDA'));
+    await user.click(screen.getByText('NVDA').closest('tr'));
 
     await waitFor(() => {
       const props = modalSpy.mock.calls.at(-1)?.[0];
@@ -331,7 +331,7 @@ describe('StaticHomePage', () => {
     ];
     scanManifestPayload.chunks = [];
 
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     expect(await screen.findByText('LOCALPASS')).toBeInTheDocument();
     expect(screen.queryByText('TOOTHIN')).not.toBeInTheDocument();
@@ -358,7 +358,7 @@ describe('StaticHomePage', () => {
     ];
     scanManifestPayload.chunks = [];
 
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     const leadersSection = await screen.findByTestId('leaders-in-leading-groups-section');
     expect(
@@ -381,7 +381,7 @@ describe('StaticHomePage', () => {
     ];
     scanManifestPayload.chunks = [];
 
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     const leadersSection = await screen.findByTestId('leaders-in-leading-groups-section');
     expect(
@@ -443,7 +443,7 @@ describe('StaticHomePage', () => {
       throw new Error(`Unexpected static path: ${path}`);
     });
 
-    renderWithProviders(<StaticHomePage />);
+    renderWithProviders(<StaticHomePage />, { withRouter: true });
 
     const topCandidatesHeading = await screen.findByText('Top Scan Candidates');
     const leadersHeading = await screen.findByText('Leaders in Leading Groups');
@@ -464,7 +464,7 @@ describe('StaticHomePage', () => {
     expect(within(leadersSection).queryByText('THINVOL')).not.toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.click(within(leadersSection).getByText('LEAD01'));
+    await user.click(within(leadersSection).getByText('LEAD01').closest('tr'));
 
     await waitFor(() => {
       const props = modalSpy.mock.calls.at(-1)?.[0];

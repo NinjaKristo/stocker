@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { ThemeProvider, createTheme } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 
 // Match the dark theme from App.jsx getDesignTokens('dark')
 const darkTheme = createTheme({
@@ -14,7 +15,7 @@ const darkTheme = createTheme({
   },
 });
 
-export function renderWithProviders(ui, options = {}) {
+export function renderWithProviders(ui, { withRouter = false, ...options } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -24,11 +25,14 @@ export function renderWithProviders(ui, options = {}) {
   });
 
   function Wrapper({ children }) {
-    return (
+    const tree = (
       <QueryClientProvider client={queryClient}>
         <ThemeProvider theme={darkTheme}>{children}</ThemeProvider>
       </QueryClientProvider>
     );
+    // Opt-in router for components that render <Link>/<RouterLink> (e.g. TickerLink).
+    // Tests that supply their own <MemoryRouter> must NOT set withRouter (avoids nesting).
+    return withRouter ? <MemoryRouter>{tree}</MemoryRouter> : tree;
   }
   return {
     queryClient,
