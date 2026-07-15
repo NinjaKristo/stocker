@@ -49,6 +49,7 @@ function Acronym({ term, children, sx }) {
     >
       <Box
         component="span"
+        data-glossary-term={lookup}
         sx={{
           borderBottom: '1px dotted',
           borderColor: 'text.disabled',

@@ -9,7 +9,7 @@
  *
  * Rules:
  *  - Keep genuine acronyms / strategy names / industry terms (RS, EPS, ATR,
- *    CANSLIM, VCP, …). NOT plain word-shortenings (Vol→Volume, USD, Sales).
+ *    CANSLIM, VCP, ...), including technical app/file terms users encounter.
  *  - Terms NOT in this map simply render as plain text (no tooltip).
  *
  * Keys are matched case-insensitively; the exact scan column labels that are
@@ -300,6 +300,230 @@ const GLOSSARY = {
     use: 'The green light to resume buying after a correction — don’t front-run it.',
   },
 
+  // --- application / data terms shown in controls and reports ---
+  'USD': {
+    name: 'United States Dollar',
+    summary: 'The common currency used to normalize values across different stock markets.',
+    where: 'Market-cap filters, scan results, Backplay budgets and reports',
+    use: 'USD normalization makes liquidity and company size comparable across markets.',
+  },
+  'API': {
+    name: 'Application Programming Interface',
+    summary: 'A defined way for the app screen, backend, or another service to exchange data and commands.',
+    where: 'Settings, connection errors, operations and assistant configuration',
+    use: 'An API error means the screen could not complete its request to the underlying service.',
+  },
+  'URL': {
+    name: 'Uniform Resource Locator',
+    summary: 'The address used to locate a page or network service.',
+    where: 'Source management, model settings and connection configuration',
+    use: 'Use the exact service URL so the app connects to the intended local or remote endpoint.',
+  },
+  'JSON': {
+    name: 'JavaScript Object Notation',
+    summary: 'A structured text format used to export, import, and exchange application data.',
+    where: 'Settings backup, assistant tool details and diagnostics',
+    use: 'JSON exports preserve structured records instead of flattening them into display text.',
+  },
+  'CSV': {
+    name: 'Comma-Separated Values',
+    summary: 'A plain-text table format that spreadsheet programs can open.',
+    where: 'Scan exports, article exports and watchlist import/export',
+    use: 'Use CSV to move symbols and report rows between the screener and a spreadsheet.',
+  },
+  'LLM': {
+    name: 'Large Language Model',
+    summary: 'An AI model trained on text and used here for assistant and theme-analysis tasks.',
+    where: 'Assistant settings, theme analysis and model selection',
+    use: 'The selected LLM affects response quality, speed, privacy, and operating cost.',
+  },
+  'AI': {
+    name: 'Artificial Intelligence',
+    summary: 'Software that performs tasks such as language analysis, ranking, or explanation generation.',
+    where: 'Assistant, model settings and generated research',
+    use: 'Treat AI output as research support and verify it before making a trading decision.',
+  },
+  'TTM': {
+    name: 'Trailing Twelve Months',
+    summary: 'A financial value calculated from the most recent twelve months of reported results.',
+    where: 'Stock fundamentals and peer metrics',
+    use: 'TTM values stay more current than the last completed fiscal year.',
+  },
+  'QoQ': {
+    name: 'Quarter over Quarter',
+    summary: 'Change from the latest reported quarter compared with the preceding quarter.',
+    where: 'Earnings and sales growth metrics',
+    use: 'QoQ highlights near-term acceleration or deceleration in company results.',
+  },
+  'Q/Q': {
+    name: 'Quarter over Quarter',
+    summary: 'Change from one reported quarter to the next.',
+    where: 'Stock-detail and scan growth labels',
+    use: 'Quarterly comparisons reveal recent business momentum.',
+  },
+  'Y/Y': {
+    name: 'Year over Year',
+    summary: 'Change from a period compared with the same period one year earlier.',
+    where: 'Stock-detail and scan growth labels',
+    use: 'Year-over-year comparisons reduce seasonal distortion in growth rates.',
+  },
+  'U/D': {
+    name: 'Up/Down Volume Ratio',
+    summary: 'Trading volume on advancing sessions compared with volume on declining sessions.',
+    where: 'Scan filters and stock accumulation metrics',
+    use: 'A higher ratio suggests buying demand is stronger than selling pressure.',
+  },
+  'OHLC': {
+    name: 'Open, High, Low, Close',
+    summary: 'The four price points that summarize one chart period.',
+    where: 'Price-chart legends and chart settings',
+    use: 'OHLC values show the full price range and closing location for each bar.',
+  },
+  'OHLCV': {
+    name: 'Open, High, Low, Close, Volume',
+    summary: 'Standard price-bar data plus the number of shares traded during the period.',
+    where: 'Chart loading and diagnostics',
+    use: 'OHLCV supplies both price action and the participation behind it.',
+  },
+  'ID': {
+    name: 'Identifier',
+    summary: 'A unique value used to distinguish a task, record, or other application object.',
+    where: 'Operations, task status and diagnostics',
+    use: 'Use the ID to trace the exact task or record when troubleshooting.',
+  },
+  'ADV': {
+    name: 'Average Daily Volume',
+    summary: 'The average number or dollar value of shares traded per day, depending on the label.',
+    where: 'Liquidity filters and scan results',
+    use: 'Higher ADV generally means easier entries and exits with less price impact.',
+  },
+  'ATR14': {
+    name: '14-Period Average True Range',
+    summary: 'Average true range calculated over the latest fourteen chart periods.',
+    where: 'Setup Engine risk and volatility details',
+    use: 'ATR14 estimates normal movement so stops can sit outside routine price noise.',
+  },
+  'EMA10': {
+    name: '10-Period Exponential Moving Average',
+    summary: 'A fast moving average that gives more weight to the latest ten periods.',
+    where: 'Charts and technical-distance filters',
+    use: 'EMA10 is useful for tracking the short-term trend of fast leaders.',
+  },
+  'EMA20': {
+    name: '20-Period Exponential Moving Average',
+    summary: 'A responsive moving average based on the latest twenty periods.',
+    where: 'Charts and technical-distance filters',
+    use: 'EMA20 often acts as near-term support during an orderly advance.',
+  },
+  'EMA50': {
+    name: '50-Period Exponential Moving Average',
+    summary: 'An intermediate trend average weighted toward more recent prices.',
+    where: 'Charts and technical-distance filters',
+    use: 'EMA50 helps distinguish normal pullbacks from broader trend damage.',
+  },
+  'ETA': {
+    name: 'Estimated Time of Arrival',
+    summary: 'The projected time remaining before a running scan or task finishes.',
+    where: 'Scan progress and operations status',
+    use: 'ETA is an estimate and can change as task throughput changes.',
+  },
+  'BT': {
+    name: 'Breakthrough',
+    summary: 'Short label for the Volume Breakthrough screener and its score.',
+    where: 'Scan filters and result columns',
+    use: 'Volume breakthroughs flag unusually strong participation that may precede follow-through.',
+  },
+  'PEG': {
+    name: 'Price/Earnings-to-Growth Ratio',
+    summary: 'The price/earnings ratio divided by expected earnings growth.',
+    where: 'Stock valuation metrics',
+    use: 'PEG adds growth context to valuation, but is most useful within comparable industries.',
+  },
+  'P/L': {
+    name: 'Profit and Loss',
+    summary: 'Money gained or lost by a trade, strategy, or account.',
+    where: 'Backplay and Paper Trader reports',
+    use: 'Dollar P/L shows the account impact that a percentage return can hide.',
+  },
+  'FX': {
+    name: 'Foreign Exchange',
+    summary: 'The market where one currency is priced and traded against another.',
+    where: 'TradingView-formatted watchlist symbols',
+    use: 'The FX prefix identifies currency-pair symbols rather than listed stocks.',
+  },
+  'MM': {
+    name: 'Market Monitor',
+    summary: 'StockBee breadth dashboard showing daily counts of strong and weak market action.',
+    where: 'Daily page Stockbee MM tab',
+    use: 'The Market Monitor gives a quick read on participation beneath the major indexes.',
+  },
+  '1D': {
+    name: 'One Day',
+    summary: 'A measurement covering one trading session.',
+    where: 'Performance bars, charts and market summaries',
+    use: 'Use the one-day view for the latest move, not the longer trend.',
+  },
+  '1W': {
+    name: 'One Week',
+    summary: 'A measurement covering approximately five trading sessions.',
+    where: 'Group rankings, performance bars and charts',
+    use: 'The one-week view highlights immediate leadership changes.',
+  },
+  '2W': {
+    name: 'Two Weeks',
+    summary: 'A measurement covering approximately ten trading sessions.',
+    where: 'Performance bars and chart controls',
+    use: 'Two weeks smooths single-session noise while remaining responsive.',
+  },
+  '1M': {
+    name: 'One Month',
+    summary: 'A measurement covering approximately one month of trading.',
+    where: 'Relative-strength metrics, performance bars and charts',
+    use: 'One-month performance shows short-term trend persistence.',
+  },
+  '3M': {
+    name: 'Three Months',
+    summary: 'A measurement covering approximately one quarter of trading.',
+    where: 'Relative-strength metrics, performance bars and charts',
+    use: 'Three months captures intermediate momentum without relying on one week.',
+  },
+  '6M': {
+    name: 'Six Months',
+    summary: 'A measurement covering approximately half a year of trading.',
+    where: 'Performance bars, charts and IPO-age controls',
+    use: 'Six-month performance helps confirm sustained leadership.',
+  },
+  '12M': {
+    name: 'Twelve Months',
+    summary: 'A measurement covering approximately one year of trading.',
+    where: 'Relative-strength metrics, performance bars and charts',
+    use: 'Twelve months provides long-horizon context for the current move.',
+  },
+  '1Y': {
+    name: 'One Year',
+    summary: 'A measurement or age window covering one year.',
+    where: 'Chart ranges, breakthrough periods and IPO-age controls',
+    use: 'The one-year view shows a full market-cycle season of price history.',
+  },
+  '2Y': {
+    name: 'Two Years',
+    summary: 'A measurement or age window covering two years.',
+    where: 'Chart ranges and IPO-age controls',
+    use: 'Two years adds context around bases and post-IPO development.',
+  },
+  '3Y': {
+    name: 'Three Years',
+    summary: 'A measurement or age window covering three years.',
+    where: 'Chart ranges and IPO-age controls',
+    use: 'Three years provides broader context for trend and business cycles.',
+  },
+  '5Y': {
+    name: 'Five Years',
+    summary: 'A measurement or age window covering five years.',
+    where: 'Chart ranges, breakthrough periods and IPO-age controls',
+    use: 'Five years reveals whether current strength is exceptional in a long history.',
+  },
+
   // --- backtesting / paper trading (Backtest tab) ---
   'Backtest': {
     name: 'Backtest',
@@ -381,14 +605,42 @@ const GLOSSARY = {
   },
 };
 
-// Whole-word terms safe to auto-wrap inside free text (alpha only — avoids
-// false hits and special characters like "P/E" or "ADV ($)").
+// Curated terms safe to annotate automatically inside free text. Boundary
+// lookarounds support punctuation-heavy labels without matching word fragments.
 export const AUTO_TERMS = [
-  '5D', '10D',
-  'RS', 'EPS', 'ATR', 'RSI', 'RVOL', 'VWAP', 'ROE', 'VCP', 'MA', 'SMA', 'EMA',
-  'CANSLIM', 'Minervini', 'IPO', 'SPY', 'ETF', 'IBD', 'GICS', 'ADR',
-  'RRG', 'RSBD', 'SEBD', 'VIX', 'DMA', 'FTD', 'NR7', 'MFE', 'MAE', 'EP',
+  'ADV ($)', 'EPS Rtg', 'RS Trend', 'OHLCV', 'CANSLIM', 'Minervini',
+  'RSBD', 'SEBD', 'RVOL', 'VWAP', 'GICS', 'RRG', 'RSI', 'ATR', 'ADR', 'ADV',
+  'ROE', 'VCP', 'SMA', 'EMA', 'IPO', 'SPY', 'ETF', 'IBD', 'DMA', 'VIX', 'FTD',
+  'NR7', 'MFE', 'MAE', 'EPS', 'RS', 'MA', 'EP', '5D', '10D', 'USD', 'API',
+  'URL', 'JSON', 'CSV', 'LLM', 'AI', 'TTM', 'QoQ', 'Q/Q', 'Y/Y', 'U/D',
+  'OHLC', 'ID', 'SE', 'CAN', 'VolB', 'Sqz', 'Stg', 'βRS', 'β', 'ATR14',
+  'EMA10', 'EMA20', 'EMA50', 'ETA', 'BT', 'PEG', 'P/L', 'P/E', 'P/S', 'FX',
+  'MM', '1D', '1W', '2W', '1M', '3M', '6M', '12M', '1Y', '2Y', '3Y', '5Y',
 ];
+
+const AUTO_TERM_PATTERN = new RegExp(
+  `(?<![A-Za-z0-9])(${AUTO_TERMS
+    .slice()
+    .sort((left, right) => right.length - left.length)
+    .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')}|\\d+\\s?[dDwWmMyY])(?![A-Za-z0-9])`,
+  'g',
+);
+
+/** Known glossary terms in display text, including positions for safe wrapping. */
+export function findGlossaryMatches(text) {
+  const value = String(text ?? '');
+  const matches = [];
+  AUTO_TERM_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = AUTO_TERM_PATTERN.exec(value)) !== null) {
+    const entry = lookupGlossaryEntry(match[0]);
+    if (entry) {
+      matches.push({ term: match[0], start: match.index, end: match.index + match[0].length, entry });
+    }
+  }
+  return matches;
+}
 
 /** Full entry ({name, summary, where, use}) or null. */
 export function lookupGlossaryEntry(term) {
@@ -397,7 +649,20 @@ export function lookupGlossaryEntry(term) {
   if (GLOSSARY[key]) return GLOSSARY[key];
   const upper = key.toUpperCase();
   const hit = Object.keys(GLOSSARY).find((k) => k.toUpperCase() === upper);
-  return hit ? GLOSSARY[hit] : null;
+  if (hit) return GLOSSARY[hit];
+
+  const period = key.match(/^(\d+)\s*([DWMY])$/i);
+  if (!period) return null;
+  const count = Number(period[1]);
+  const units = { D: 'Day', W: 'Week', M: 'Month', Y: 'Year' };
+  const unit = units[period[2].toUpperCase()];
+  const label = `${count} ${unit}${count === 1 ? '' : 's'}`;
+  return {
+    name: label,
+    summary: `A measurement window covering ${label.toLowerCase()} of market or company data.`,
+    where: 'Chart ranges, performance columns, lookback controls and report metrics',
+    use: 'The window length tells you whether a metric reflects immediate action or a longer trend.',
+  };
 }
 
 /** Back-compat: short hover text ("Name — summary") or null. */

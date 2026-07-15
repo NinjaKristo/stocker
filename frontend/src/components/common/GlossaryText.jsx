@@ -9,24 +9,19 @@
  */
 import { Fragment } from 'react';
 import Acronym from './Acronym';
-import { AUTO_TERMS } from '../../utils/glossary';
-
-const escaped = AUTO_TERMS.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-const TERM_RE = new RegExp(`\\b(${escaped.join('|')})\\b`, 'g');
+import { findGlossaryMatches } from '../../utils/glossary';
 
 function GlossaryText({ children }) {
   if (typeof children !== 'string' || !children) return children ?? null;
 
   const parts = [];
   let lastIndex = 0;
-  let match;
-  TERM_RE.lastIndex = 0;
-  while ((match = TERM_RE.exec(children)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(<Fragment key={`t-${lastIndex}`}>{children.slice(lastIndex, match.index)}</Fragment>);
+  for (const match of findGlossaryMatches(children)) {
+    if (match.start > lastIndex) {
+      parts.push(<Fragment key={`t-${lastIndex}`}>{children.slice(lastIndex, match.start)}</Fragment>);
     }
-    parts.push(<Acronym key={`a-${match.index}`} term={match[0]} />);
-    lastIndex = match.index + match[0].length;
+    parts.push(<Acronym key={`a-${match.start}`} term={match.term} />);
+    lastIndex = match.end;
   }
   if (lastIndex < children.length) {
     parts.push(<Fragment key={`t-${lastIndex}`}>{children.slice(lastIndex)}</Fragment>);

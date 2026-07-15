@@ -41,6 +41,15 @@ code {
     monospace;
 }
 
+/* Known terms without explicit rich tooltips still advertise native hover help. */
+[data-auto-glossary] {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
 #root {
   min-height: 100vh;
 }
