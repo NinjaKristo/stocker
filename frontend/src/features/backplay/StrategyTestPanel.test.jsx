@@ -1,9 +1,10 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockRunBackplay, mockRunBackplayComparison, mockGetBuiltinStrategies } = vi.hoisted(() => ({
+const { mockRunBackplay, mockRunBackplayComparison, mockRunSimilarStockBackplays, mockGetBuiltinStrategies } = vi.hoisted(() => ({
   mockRunBackplay: vi.fn(),
   mockRunBackplayComparison: vi.fn(),
+  mockRunSimilarStockBackplays: vi.fn(),
   mockGetBuiltinStrategies: vi.fn(),
 }));
 
@@ -13,6 +14,7 @@ vi.mock('../../api/backplay', async (importOriginal) => {
     ...original,
     runBackplay: mockRunBackplay,
     runBackplayComparison: mockRunBackplayComparison,
+    runSimilarStockBackplays: mockRunSimilarStockBackplays,
     getBuiltinStrategies: mockGetBuiltinStrategies,
   };
 });
@@ -44,6 +46,18 @@ describe('StrategyTestPanel', () => {
     mockGetBuiltinStrategies.mockResolvedValue({ builtins: [] });
     mockRunBackplay.mockResolvedValue(PRIMARY_RESULT);
     mockRunBackplayComparison.mockResolvedValue({ runs: [], errors: [] });
+    mockRunSimilarStockBackplays.mockResolvedValue({
+      discovery: {
+        symbol: 'NVDA',
+        feature_run: { as_of_date: '2026-07-15' },
+        strategies: [{
+          id: 'technical_twins', name: 'Technical Twins', description: 'Similar charts',
+          candidates: [{ symbol: 'AMD', company_name: 'AMD', similarity: 92, evidence: ['RS: 90 vs 91'] }],
+        }],
+      },
+      runs: [],
+      errors: [],
+    });
   });
 
   it('uses the selected budget and compares against the original run inputs', async () => {
@@ -69,5 +83,15 @@ describe('StrategyTestPanel', () => {
       starting_cash: 25000,
     }));
     expect(await screen.findByText('Strategy comparison report')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find similar stocks and backtest them' }));
+    await waitFor(() => expect(mockRunSimilarStockBackplays).toHaveBeenCalled());
+    expect(mockRunSimilarStockBackplays.mock.calls[0][0]).toEqual(expect.objectContaining({
+      symbol: 'NVDA',
+      starting_cash: 25000,
+    }));
+    expect(await screen.findByText('Similar-stock strategy report')).toBeInTheDocument();
+    expect(screen.getAllByText('AMD')).toHaveLength(2);
+    expect(screen.getByText('RS').closest('.MuiChip-label')).toHaveTextContent('RS: 90 vs 91');
   });
 });

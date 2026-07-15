@@ -24,7 +24,8 @@ from ...schemas.backplay import (
 )
 from ...services.backplay.engine import BUILTIN_STRATEGIES, StrategySpec, run_backtest
 from ...services.backplay.script_engine import ScriptError, compile_script
-from ...services.backplay.selection import list_presets, select_top_symbols
+from ...services.backplay.selection import list_presets, load_latest_serialized_rows, select_top_symbols
+from ...services.backplay.similarity import generate_peer_screens
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -231,6 +232,22 @@ async def get_run(run_id: int, db: Session = Depends(get_db)):
 async def get_presets(db: Session = Depends(get_db)):
     """Merged preset catalog: built-in screens plus the user's saved presets."""
     return {"presets": list_presets(db)}
+
+
+@router.get("/similar/{symbol}")
+async def get_similar_stocks(
+    symbol: str,
+    db: Session = Depends(get_db),
+    limit: int = Query(5, ge=1, le=10),
+    market: Optional[str] = None,
+):
+    """Generate explainable peer screens from the latest published scan."""
+    try:
+        run_info, rows = load_latest_serialized_rows(db, market=market)
+        result = generate_peer_screens(rows, symbol, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {**result, "feature_run": run_info}
 
 
 @router.get("/strategies/builtins")

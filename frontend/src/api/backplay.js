@@ -52,6 +52,43 @@ export const getBackplayPresets = async () => {
   return response.data;
 };
 
+export const getSimilarStocks = async (symbol, { limit = 3, market } = {}) => {
+  const response = await apiClient.get(`/v1/backplay/similar/${encodeURIComponent(symbol)}`, {
+    params: { limit, ...(market ? { market } : {}) },
+  });
+  return response.data;
+};
+
+export const runSimilarStockBackplays = async (basePayload, perStrategy = 3) => {
+  const discovery = await getSimilarStocks(basePayload.symbol, {
+    limit: perStrategy,
+    market: basePayload.market,
+  });
+  const selectedBySymbol = new Map();
+  for (const scanStrategy of discovery.strategies || []) {
+    for (const candidate of (scanStrategy.candidates || []).slice(0, perStrategy)) {
+      const existing = selectedBySymbol.get(candidate.symbol) || {
+        symbol: candidate.symbol,
+        scanStrategies: [],
+      };
+      existing.scanStrategies.push(scanStrategy.name);
+      selectedBySymbol.set(candidate.symbol, existing);
+    }
+  }
+
+  const settled = await Promise.allSettled(
+    [...selectedBySymbol.values()].map(async (candidate) => ({
+      ...candidate,
+      response: await runBackplay({ ...basePayload, symbol: candidate.symbol }),
+    })),
+  );
+  return {
+    discovery,
+    runs: settled.filter((entry) => entry.status === 'fulfilled').map((entry) => entry.value),
+    errors: settled.filter((entry) => entry.status === 'rejected').map((entry) => entry.reason),
+  };
+};
+
 export const getBuiltinStrategies = async () => {
   const response = await apiClient.get('/v1/backplay/strategies/builtins');
   return response.data;

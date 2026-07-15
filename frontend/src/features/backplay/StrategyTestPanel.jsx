@@ -6,11 +6,13 @@ import { useMutation } from '@tanstack/react-query';
 import { Alert, Button, CircularProgress, InputAdornment, Paper, Stack, TextField, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import { useState } from 'react';
 
-import { runBackplay, runBackplayComparison } from '../../api/backplay';
+import { runBackplay, runBackplayComparison, runSimilarStockBackplays } from '../../api/backplay';
 import BacktestResults from './BacktestResults';
 import ComparisonReport from './ComparisonReport';
+import SimilarStocksReport from './SimilarStocksReport';
 import StrategyPicker, { DEFAULT_STRATEGY } from './StrategyPicker';
 
 function StrategyTestPanel({ prefillSymbol = '' }) {
@@ -22,6 +24,7 @@ function StrategyTestPanel({ prefillSymbol = '' }) {
 
   const mutation = useMutation({ mutationFn: runBackplay });
   const comparisonMutation = useMutation({ mutationFn: runBackplayComparison });
+  const similarMutation = useMutation({ mutationFn: runSimilarStockBackplays });
 
   const buildPayload = () => ({
     mode: 'single',
@@ -34,6 +37,7 @@ function StrategyTestPanel({ prefillSymbol = '' }) {
 
   const handleRun = () => {
     comparisonMutation.reset();
+    similarMutation.reset();
     mutation.mutate(buildPayload());
   };
 
@@ -123,6 +127,19 @@ function StrategyTestPanel({ prefillSymbol = '' }) {
               Spawns four saved backtests using the same dates and budget.
             </Typography>
           </Stack>
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mt: 1 }}>
+            <Button
+              variant="outlined"
+              startIcon={similarMutation.isPending ? <CircularProgress size={16} /> : <TravelExploreIcon />}
+              disabled={similarMutation.isPending}
+              onClick={() => similarMutation.mutate(mutation.variables)}
+            >
+              Find similar stocks and backtest them
+            </Button>
+            <Typography variant="caption" color="text.secondary">
+              Generates three peer scans and replays this rule on their leading matches.
+            </Typography>
+          </Stack>
         </Paper>
       )}
 
@@ -130,9 +147,21 @@ function StrategyTestPanel({ prefillSymbol = '' }) {
         <Alert severity="error">The comparison report could not be created.</Alert>
       )}
 
+      {similarMutation.isError && (
+        <Alert severity="error">
+          {similarMutation.error?.response?.data?.detail || 'Similar-stock scans could not be generated.'}
+        </Alert>
+      )}
+
       {comparisonMutation.data && mutation.data && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <ComparisonReport primary={mutation.data} comparison={comparisonMutation.data} />
+        </Paper>
+      )}
+
+      {similarMutation.data && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <SimilarStocksReport result={similarMutation.data} />
         </Paper>
       )}
     </Stack>

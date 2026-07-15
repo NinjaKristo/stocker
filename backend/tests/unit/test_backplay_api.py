@@ -190,6 +190,33 @@ class TestHistoryAndCatalogs:
         ids = {entry["id"] for entry in catalog["builtins"]}
         assert {"breakout", "ma_cross", "buy_hold"} <= ids
 
+    async def test_similar_stocks_uses_latest_feature_rows(self, db_session, monkeypatch):
+        rows = [
+            {"symbol": "TEST", "rs_rating": 90, "composite_score": 88, "stage": 2},
+            {"symbol": "PEER", "rs_rating": 89, "composite_score": 87, "stage": 2},
+        ]
+        monkeypatch.setattr(
+            backplay_api,
+            "load_latest_serialized_rows",
+            lambda db, market=None: ({"run_id": 7, "as_of_date": "2026-07-15"}, rows),
+        )
+
+        response = await backplay_api.get_similar_stocks("test", db=db_session, limit=3)
+
+        assert response["symbol"] == "TEST"
+        assert response["feature_run"]["run_id"] == 7
+        assert response["strategies"][0]["candidates"][0]["symbol"] == "PEER"
+
+    async def test_similar_stocks_returns_404_for_missing_target(self, db_session, monkeypatch):
+        monkeypatch.setattr(
+            backplay_api,
+            "load_latest_serialized_rows",
+            lambda db, market=None: ({"run_id": 7, "as_of_date": "2026-07-15"}, []),
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await backplay_api.get_similar_stocks("NOPE", db=db_session)
+        assert exc_info.value.status_code == 404
+
 
 @pytest.mark.asyncio
 class TestScriptValidation:
