@@ -45,6 +45,8 @@ _include("digest", prefix="/digest", tags=["digest"])
 _include("strategy_profiles", prefix="/strategy-profiles", tags=["strategy-profiles"])
 _include("ticker_validation", prefix="/ticker-validation", tags=["ticker-validation"])
 _include("filter_presets", prefix="/filter-presets", tags=["filter-presets"])
+_include("backplay", prefix="/backplay", tags=["backplay"])
+_include("paper", prefix="/paper", tags=["paper"])
 _include("features", prefix="/features", tags=["features"])
 
 _include("cache", tags=["cache"])

@@ -50,6 +50,7 @@ celery_app = Celery(
         'app.tasks.telemetry_tasks',  # Weekly telemetry governance audit (asia.10.4)
         'app.tasks.runtime_bootstrap_tasks',  # Local-default first-run bootstrap orchestration
         'app.tasks.static_export_tasks',  # Scheduled static-data bundle export
+        'app.tasks.paper_trading_tasks',  # Daily paper-trading evaluation (Backplay #7.4)
         'app.interfaces.tasks.feature_store_tasks',  # Daily feature snapshot
     ]
 )
@@ -387,6 +388,19 @@ if settings.cache_warmup_enabled:
             ),
             'schedule': crontab(hour=3, minute=0, day_of_week=0),
             'options': {'queue': _qname},
+            'kwargs': {'market': _market},
+        }
+
+        # Daily paper-trading evaluation — one hour after this market's cache
+        # warm so rules see fully refreshed bars. Idempotent + catch-up safe.
+        beat_schedule[f'daily-paper-evaluation-{_m_lower}'] = {
+            'task': 'app.tasks.paper_trading_tasks.evaluate_paper_setups',
+            'schedule': crontab(
+                hour=(_warm_h + 1) % 24,
+                minute=_warm_m,
+                day_of_week='1-5'
+            ),
+            'options': {'queue': market_jobs_queue_for_market(_market)},
             'kwargs': {'market': _market},
         }
 

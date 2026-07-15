@@ -58,12 +58,27 @@ describe('ValidationPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Validation' })).toBeInTheDocument();
-    expect(screen.getByText('Recent Events')).toBeInTheDocument();
+    expect(await screen.findByText('Recent Events')).toBeInTheDocument();
     expect(screen.getByText('Failure Clusters')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/stocks/NVDA');
     expect(screen.getByText('Rating: Buy')).toBeInTheDocument();
     expect(screen.getByText(formatDate('2026-04-01'))).toBeInTheDocument();
     expect(screen.getByText(formatDate('2026-04-02'))).toBeInTheDocument();
+  });
+
+  it('opens every Backplay mode from the page shell', async () => {
+    getValidationOverview.mockResolvedValue({
+      horizons: [], recent_events: [], failure_clusters: [], degraded_reasons: [], freshness: {},
+    });
+    renderWithProviders(<MemoryRouter><ValidationPage /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Backplay' }));
+    expect(screen.getByRole('button', { name: 'Replay' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Strategy Test' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Scan Top 10' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Strategy Test' }));
+    expect(screen.getByRole('button', { name: 'Run backtest' })).toBeInTheDocument();
   });
 
   it('updates the query when source and lookback controls change', async () => {

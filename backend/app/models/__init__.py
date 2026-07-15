@@ -38,6 +38,7 @@ from .user_theme import UserTheme, UserThemeSubgroup, UserThemeStock
 from .user_watchlist import UserWatchlist, WatchlistItem
 from .ticker_validation import TickerValidationLog
 from .filter_preset import FilterPreset
+from .backplay import BackplayStrategy, BackplayRun, PaperSetup, PaperTrade
 from .institutional_ownership import InstitutionalOwnershipHistory
 from .fx_rate import FXRate
 from .app_settings import AppSetting
@@ -107,6 +108,11 @@ __all__ = [
     "TickerValidationLog",
     # Filter Presets
     "FilterPreset",
+    # Backplay backtests + paper trading
+    "BackplayStrategy",
+    "BackplayRun",
+    "PaperSetup",
+    "PaperTrade",
     # Institutional Ownership History
     "InstitutionalOwnershipHistory",
     # FX
