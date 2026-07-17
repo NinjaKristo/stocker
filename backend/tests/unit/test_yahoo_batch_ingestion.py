@@ -116,6 +116,36 @@ def test_fetch_batch_prices_uses_required_yfinance_flags(monkeypatch):
     assert captured["actions"] is True
 
 
+def test_fetch_batch_prices_normalizes_single_symbol_multiindex(monkeypatch):
+    source = pd.concat(
+        {"AAPL": _price_df(date(2026, 7, 16), 210.0)},
+        axis=1,
+    )
+    monkeypatch.setattr(bulk_data_fetcher_module.yf, "download", lambda **_kwargs: source)
+
+    result = BulkDataFetcher().fetch_batch_prices(["AAPL"], period="7d")["AAPL"]
+
+    assert result["has_error"] is False
+    frame = result["price_data"]
+    assert list(frame.columns) == ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+    assert frame.index.name == "Date"
+    assert frame.index[-1].date() == date(2026, 7, 16)
+
+
+def test_fetch_batch_prices_finds_symbol_on_second_multiindex_level(monkeypatch):
+    source = pd.concat(
+        {"AAPL": _price_df(date(2026, 7, 16), 210.0)},
+        axis=1,
+    ).swaplevel(0, 1, axis=1)
+    monkeypatch.setattr(bulk_data_fetcher_module.yf, "download", lambda **_kwargs: source)
+
+    result = BulkDataFetcher().fetch_batch_prices(["AAPL", "MSFT"], period="7d")
+
+    assert result["AAPL"]["has_error"] is False
+    assert result["AAPL"]["price_data"].index[-1].date() == date(2026, 7, 16)
+    assert result["MSFT"]["has_error"] is True
+
+
 def test_bulk_data_fetcher_reuses_fallback_rate_limiter():
     fetcher_one = BulkDataFetcher()
     fetcher_two = BulkDataFetcher()
@@ -873,6 +903,47 @@ def test_store_in_database_replaces_latest_day_row(monkeypatch):
     assert rows[0].close == 110.0
     assert rows[0].adj_close == 109.5
     db.close()
+
+
+def test_store_batch_in_database_persists_single_row_frame():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    service = PriceCacheService(redis_client=None, session_factory=TestingSessionLocal)
+
+    service._store_batch_in_database({"AAPL": _price_df(date(2026, 7, 16), 210.0)})
+
+    db = TestingSessionLocal()
+    row = db.query(StockPrice).filter(StockPrice.symbol == "AAPL").one()
+    assert row.date == date(2026, 7, 16)
+    assert row.close == 210.0
+    db.close()
+
+
+def test_store_batch_in_database_rejects_noncanonical_frame():
+    service = PriceCacheService(redis_client=None, session_factory=lambda: MagicMock())
+    frame = _price_df(date(2026, 7, 16), 210.0)
+    frame.columns = pd.MultiIndex.from_product([["AAPL"], frame.columns])
+
+    with pytest.raises(ValueError, match="non-canonical MultiIndex"):
+        service._store_batch_in_database({"AAPL": frame})
+
+
+def test_store_batch_in_cache_does_not_publish_redis_when_database_fails():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = []
+    db.commit.side_effect = RuntimeError("database unavailable")
+    redis = _FakeRedis([])
+    service = PriceCacheService(redis_client=redis, session_factory=lambda: db)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        service.store_batch_in_cache(
+            {"AAPL": _price_df(date(2026, 7, 16), 210.0)},
+            also_store_db=True,
+        )
+
+    db.rollback.assert_called_once()
+    assert redis.pipeline_instance is None
 
 
 def test_cleanup_old_price_data_skips_inactive_symbols(monkeypatch):

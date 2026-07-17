@@ -10,6 +10,7 @@ docs/learning_loop/adr_ll2_e1_canonical_price_contract_v1.md
 """
 import logging
 import math
+import pandas as pd
 from collections.abc import Callable
 from typing import TYPE_CHECKING, List, Dict, Optional, Any, NamedTuple
 from threading import RLock
@@ -35,6 +36,16 @@ if TYPE_CHECKING:
     from .rate_limiter import RedisRateLimiter
 
 logger = logging.getLogger(__name__)
+
+_PRICE_COLUMN_NAMES = {
+    "open": "Open",
+    "high": "High",
+    "low": "Low",
+    "close": "Close",
+    "adj close": "Adj Close",
+    "adjclose": "Adj Close",
+    "volume": "Volume",
+}
 
 
 class _PriceFailureMetric(NamedTuple):
@@ -80,6 +91,50 @@ def _new_yf_tickers(symbols_str: str):
             # Older yfinance: no session kwarg on Tickers; fall through.
             pass
     return yf.Tickers(symbols_str)
+
+
+def _normalize_yahoo_price_frame(raw: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """Return one symbol's Yahoo payload as a canonical date-indexed OHLCV frame."""
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
+        return pd.DataFrame()
+
+    frame = raw.copy()
+    if isinstance(frame.columns, pd.MultiIndex):
+        normalized_symbol = str(symbol).upper()
+        extracted = None
+        for level in range(frame.columns.nlevels):
+            labels = {str(value).upper(): value for value in frame.columns.get_level_values(level)}
+            if normalized_symbol in labels:
+                extracted = frame.xs(labels[normalized_symbol], axis=1, level=level, drop_level=True)
+                break
+        if extracted is None:
+            return pd.DataFrame()
+        frame = extracted.copy()
+
+    if isinstance(frame.columns, pd.MultiIndex):
+        return pd.DataFrame()
+
+    renamed = {}
+    for column in frame.columns:
+        canonical = _PRICE_COLUMN_NAMES.get(str(column).strip().lower())
+        if canonical:
+            renamed[column] = canonical
+    frame = frame.rename(columns=renamed)
+    required = {"Open", "High", "Low", "Close", "Volume"}
+    if not required.issubset(frame.columns):
+        return pd.DataFrame()
+
+    if "Adj Close" not in frame.columns:
+        frame["Adj Close"] = frame["Close"]
+    frame = frame[["Open", "High", "Low", "Close", "Adj Close", "Volume"]]
+    frame.index = pd.to_datetime(frame.index, errors="coerce", utc=True).tz_localize(None)
+    frame = frame[~frame.index.isna()]
+    for column in frame.columns:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = frame.dropna(subset=["Open", "High", "Low", "Close"])
+    frame = frame[~frame.index.duplicated(keep="last")].sort_index()
+    frame.index.name = "Date"
+    return frame
 
 
 class BulkDataFetcher:
@@ -565,7 +620,7 @@ class BulkDataFetcher:
             # Multi-symbol: returns MultiIndex columns (AAPL/Open, AAPL/High, etc.)
             if len(fetch_symbols) == 1:
                 symbol = fetch_symbols[0]
-                df = raw.copy()
+                df = _normalize_yahoo_price_frame(raw, symbol)
                 if df is not None and not df.empty:
                     results[symbol] = {
                         'symbol': symbol, 'price_data': df, 'info': None,
@@ -582,24 +637,14 @@ class BulkDataFetcher:
                 # Multi-symbol: split by ticker
                 for symbol in fetch_symbols:
                     try:
-                        if symbol in raw.columns.get_level_values(0):
-                            df = raw[symbol].copy()
-                            # Drop rows where all values are NaN (symbol had no data for that date)
-                            df = df.dropna(how='all')
-                            if not df.empty:
-                                results[symbol] = {
-                                    'symbol': symbol, 'price_data': df, 'info': None,
-                                    'fundamentals': None, 'has_error': False, 'error': None
-                                }
-                            else:
-                                error = download_errors.get(symbol) or 'No data after filtering NaN rows'
-                                results[symbol] = self._build_error_result(
-                                    symbol,
-                                    error,
-                                    error_kind=self._price_error_kind(error),
-                                )
+                        df = _normalize_yahoo_price_frame(raw, symbol)
+                        if not df.empty:
+                            results[symbol] = {
+                                'symbol': symbol, 'price_data': df, 'info': None,
+                                'fundamentals': None, 'has_error': False, 'error': None
+                            }
                         else:
-                            error = download_errors.get(symbol) or 'Symbol not in download results'
+                            error = download_errors.get(symbol) or 'No canonical price data returned'
                             results[symbol] = self._build_error_result(
                                 symbol,
                                 error,

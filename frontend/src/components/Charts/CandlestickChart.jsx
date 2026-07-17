@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchPriceHistory, fetchRSLine, priceHistoryKeys, PRICE_HISTORY_STALE_TIME } from '../../api/priceHistory';
 import { rsBandForRange } from './rsBand';
 import ChartSkeleton from './ChartSkeleton';
-import { transformToCandlestickData } from './candlestickData';
+import { formatPriceDate, getLatestPriceDate, transformToCandlestickData } from './candlestickData';
 
 // Debounce utility
 const debounce = (fn, ms) => {
@@ -125,6 +125,10 @@ function CandlestickChart({
   const effectiveIsFetching = Boolean(!priceData && isFetching);
   const effectiveError = priceData ? null : error;
   const effectiveRefetch = priceData ? () => Promise.resolve({ data: priceData }) : refetch;
+  const dataThroughText = useMemo(
+    () => formatPriceDate(getLatestPriceDate(apiData)),
+    [apiData],
+  );
 
   // Format last updated time
   const lastUpdatedText = useMemo(() => {
@@ -657,8 +661,9 @@ function CandlestickChart({
         </Box>
       )}
 
-      {/* Last updated indicator */}
-      {!compact && !showLoading && !showError && !showNoData && lastUpdatedText && !showRefreshIndicator && (
+      {/* Price-session indicator. This is deliberately separate from request time:
+          reloading an old cache must never look like fresh market data. */}
+      {!showLoading && !showError && !showNoData && dataThroughText && !showRefreshIndicator && (
         <Box
           sx={{
             position: 'absolute',
@@ -672,7 +677,8 @@ function CandlestickChart({
           }}
         >
           <Typography variant="caption" sx={{ color: '#999', fontSize: '0.65rem' }}>
-            Updated {lastUpdatedText}
+            {compact ? `Through ${dataThroughText}` : `Data through ${dataThroughText}`}
+            {!compact && lastUpdatedText ? ` · loaded ${lastUpdatedText}` : ''}
           </Typography>
         </Box>
       )}

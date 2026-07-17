@@ -1511,6 +1511,11 @@ class PriceCacheService:
 
         stored = 0
 
+        # Persist first so Redis can never advertise bars that failed to reach
+        # the durable store. A failed DB write must fail the refresh batch.
+        if also_store_db:
+            self._store_batch_in_database(batch_data)
+
         # Batch Redis writes using pipeline
         if self._redis_client:
             try:
@@ -1578,11 +1583,52 @@ class PriceCacheService:
                     if data is not None and not data.empty:
                         self._store_recent_in_redis(symbol, data, market=market)
 
-        # Batch DB writes
-        if also_store_db:
-            self._store_batch_in_database(batch_data)
-
         return stored
+
+    @staticmethod
+    def _database_rows_for_symbol(symbol: str, data: pd.DataFrame) -> list[dict]:
+        if not isinstance(data, pd.DataFrame):
+            raise TypeError(f"Price payload for {symbol} must be a DataFrame")
+        if data.empty:
+            return []
+        if isinstance(data.columns, pd.MultiIndex):
+            raise ValueError(f"Price payload for {symbol} has non-canonical MultiIndex columns")
+
+        frame = data.copy().reset_index()
+        if not frame.columns.is_unique:
+            raise ValueError(f"Price payload for {symbol} has duplicate columns")
+        if "Date" not in frame.columns:
+            if len(frame.columns) == 0:
+                return []
+            frame = frame.rename(columns={frame.columns[0]: "Date"})
+
+        columns = {str(column): index for index, column in enumerate(frame.columns)}
+        required = ("Date", "Open", "High", "Low", "Close", "Volume")
+        missing = [column for column in required if column not in columns]
+        if missing:
+            raise ValueError(f"Price payload for {symbol} is missing columns: {', '.join(missing)}")
+
+        rows = []
+        for values in frame.itertuples(index=False, name=None):
+            raw_date = values[columns["Date"]]
+            parsed_date = pd.to_datetime(raw_date, errors="coerce")
+            if pd.isna(parsed_date):
+                raise ValueError(f"Price payload for {symbol} contains an invalid date: {raw_date!r}")
+            row_date = parsed_date.date()
+            close = values[columns["Close"]]
+            adj_close_index = columns.get("Adj Close", columns["Close"])
+            volume = values[columns["Volume"]]
+            rows.append({
+                "symbol": symbol,
+                "date": row_date,
+                "open": float(values[columns["Open"]]),
+                "high": float(values[columns["High"]]),
+                "low": float(values[columns["Low"]]),
+                "close": float(close),
+                "volume": int(volume) if pd.notna(volume) else 0,
+                "adj_close": float(values[adj_close_index]),
+            })
+        return rows
 
     def _store_batch_in_database(self, batch_data: Dict[str, pd.DataFrame]) -> None:
         """
@@ -1600,26 +1646,23 @@ class PriceCacheService:
         db = self._session_factory()
 
         try:
-            symbols = list(batch_data.keys())
-
-            symbol_dates: Dict[str, set] = {}
-            latest_dates: Dict[str, date] = {}
+            prepared_rows: Dict[str, list[dict]] = {}
             for symbol, data in batch_data.items():
-                if data is None or data.empty:
+                if data is None:
                     continue
-                normalized = set()
-                latest = None
-                for raw_date in data.reset_index()["Date"]:
-                    row_date = raw_date
-                    if isinstance(row_date, pd.Timestamp):
-                        row_date = row_date.date()
-                    elif isinstance(row_date, datetime):
-                        row_date = row_date.date()
-                    normalized.add(row_date)
-                    latest = row_date if latest is None or row_date > latest else latest
-                if normalized:
-                    symbol_dates[symbol] = normalized
-                    latest_dates[symbol] = latest
+                rows = self._database_rows_for_symbol(symbol, data)
+                if rows:
+                    prepared_rows[symbol] = rows
+
+            symbols = list(prepared_rows)
+            symbol_dates = {
+                symbol: {row["date"] for row in rows}
+                for symbol, rows in prepared_rows.items()
+            }
+            latest_dates = {
+                symbol: max(dates)
+                for symbol, dates in symbol_dates.items()
+            }
 
             existing_pairs: Dict[tuple[str, date], int] = {}
             for chunk_start in range(0, len(symbols), 100):
@@ -1634,39 +1677,13 @@ class PriceCacheService:
 
             rows_to_insert = []
             rows_to_update = []
-            for symbol, data in batch_data.items():
-                if data is None or data.empty:
-                    continue
-
-                df = data.reset_index()
-                if 'Date' not in df.columns and len(df.columns) > 0:
-                    df = df.rename(columns={df.columns[0]: 'Date'})
-                for _, row in df.iterrows():
-                    row_date = row['Date']
-                    if isinstance(row_date, pd.Timestamp):
-                        row_date = row_date.date()
-                    elif isinstance(row_date, datetime):
-                        row_date = row_date.date()
-
-                    try:
-                        price_dict = {
-                            'symbol': symbol,
-                            'date': row_date,
-                            'open': float(row.get('Open', 0)),
-                            'high': float(row.get('High', 0)),
-                            'low': float(row.get('Low', 0)),
-                            'close': float(row.get('Close', 0)),
-                            'volume': int(row.get('Volume', 0)) if pd.notna(row.get('Volume')) else 0,
-                            'adj_close': float(row.get('Adj Close', row.get('Close', 0))),
-                        }
-                        existing_id = existing_pairs.get((symbol, row_date))
-                        if existing_id is None:
-                            rows_to_insert.append(price_dict)
-                        elif row_date == latest_dates.get(symbol):
-                            price_dict["id"] = existing_id
-                            rows_to_update.append(price_dict)
-                    except Exception as e:
-                        logger.warning(f"Error preparing row for {symbol}: {e}")
+            for symbol, symbol_rows in prepared_rows.items():
+                for price_dict in symbol_rows:
+                    existing_id = existing_pairs.get((symbol, price_dict["date"]))
+                    if existing_id is None:
+                        rows_to_insert.append(price_dict)
+                    elif price_dict["date"] == latest_dates[symbol]:
+                        rows_to_update.append({**price_dict, "id": existing_id})
 
             # Bulk insert in conservative chunks to keep statement size bounded.
             if rows_to_insert:
@@ -1695,6 +1712,7 @@ class PriceCacheService:
         except Exception as e:
             logger.error(f"Error in batch database write: {e}", exc_info=True)
             db.rollback()
+            raise
 
         finally:
             db.close()
