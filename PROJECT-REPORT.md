@@ -1,5 +1,7 @@
 # PROJECT REPORT
 
+`codex resume -C "C:\Users\micro\github\FINANCE\stock-screener" 019f66bb-57c3-7483-8cf9-c35c63143e8c`
+
 > Stock Screener project status and operating handoff  
 > Last updated: 2026-07-17
 
@@ -120,4 +122,3 @@ does not claim a clean repository-wide suite where one does not exist.
 - **Not current capability:** real-time quotes or intraday candlesticks.
 - **How to judge a chart:** read the `Data through` label. The page load time only says
   when the cache was read; it does not say when the market bar was produced.
-

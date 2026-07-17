@@ -1,5 +1,7 @@
 # RECENT CHANGE
 
+`codex resume -C "C:\Users\micro\github\FINANCE\stock-screener" 019f66bb-57c3-7483-8cf9-c35c63143e8c`
+
 > Daily chart freshness repair  
 > Completed: 2026-07-17  
 > Branch: `stocker/fix/daily-chart-freshness`  
@@ -113,4 +115,3 @@ The daily chart pipeline is working again and exposes its actual market-data dat
 The repaired stack provides latest-completed-day charts, not real-time charts. Delayed
 intraday support remains separate work under `stockscreenclaude-m4l`, and the 124
 provider-rejected symbols are tracked under `stockscreenclaude-jm9`.
-
