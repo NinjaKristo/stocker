@@ -170,7 +170,7 @@ services:
     <<: *worker-common
     command: >
       sh -c 'QUEUES="$$(python scripts/compose_enabled_markets.py queues --markets "$${ENABLED_MARKETS:-US}")" &&
-      exec celery -A app.celery_app worker --pool=prefork --loglevel=info --concurrency=1
+      exec celery -A app.celery_app worker --pool=solo --loglevel=info --concurrency=1
       --without-mingle --without-gossip -Q "$$QUEUES" -n datafetch-global@%h'
 
   celery-marketjobs-us:

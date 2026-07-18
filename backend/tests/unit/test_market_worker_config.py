@@ -36,6 +36,14 @@ def test_docker_compose_datafetch_queues_are_derived_from_enabled_markets():
     assert "-Q \"$$QUEUES\"" in compose
 
 
+def test_docker_compose_datafetch_uses_fork_safe_solo_pool():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    service = compose.split("  celery-datafetch:", 1)[1].split("\n  celery-", 1)[0]
+
+    assert "--pool=solo" in service
+    assert "--pool=prefork" not in service
+
+
 def test_release_overlay_uses_release_image_for_every_market_worker():
     release = (ROOT / "docker-compose.release.yml").read_text(encoding="utf-8")
 

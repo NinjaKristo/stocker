@@ -73,6 +73,27 @@ export const aggregateToWeekly = (dailyData) => {
   return weeklyData;
 };
 
+export const getLatestPriceDate = (priceData) => {
+  if (!Array.isArray(priceData)) return null;
+  return priceData.reduce((latest, point) => {
+    const value = typeof point?.date === 'string' ? point.date.slice(0, 10) : null;
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return latest;
+    return latest === null || value > latest ? value : latest;
+  }, null);
+};
+
+export const formatPriceDate = (date) => {
+  if (!date) return null;
+  const parsed = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+
 /**
  * Transform API data to TradingView Lightweight Charts format
  */
