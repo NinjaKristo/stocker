@@ -127,7 +127,10 @@ def _normalize_yahoo_price_frame(raw: pd.DataFrame, symbol: str) -> pd.DataFrame
     if "Adj Close" not in frame.columns:
         frame["Adj Close"] = frame["Close"]
     frame = frame[["Open", "High", "Low", "Close", "Adj Close", "Volume"]]
-    frame.index = pd.to_datetime(frame.index, errors="coerce", utc=True).tz_localize(None)
+    idx = pd.to_datetime(frame.index, errors="coerce")
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)   # drop tz, keep the local session date; don't rebase to UTC
+    frame.index = idx
     frame = frame[~frame.index.isna()]
     for column in frame.columns:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
