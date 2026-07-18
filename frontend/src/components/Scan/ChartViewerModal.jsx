@@ -12,6 +12,8 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
 import PeopleIcon from '@mui/icons-material/People';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAllFilteredSymbols, getSetupDetails, getSingleResult } from '../../api/scans';
 import { prefetchPriceHistoryBatch } from '../../api/priceHistory';
@@ -521,9 +523,31 @@ function ChartViewerModal({
                   </Button>
                 )}
                 {totalCount > 0 && (
-                  <Typography variant="body2" color="text.secondary">
-                    Stock {currentIndex + 1} of {totalCount}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                    <IconButton
+                      onClick={goPrevious}
+                      size="small"
+                      aria-label="Previous stock"
+                      disabled={totalCount <= 1}
+                    >
+                      <ChevronLeftIcon />
+                    </IconButton>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ minWidth: 92, textAlign: 'center' }}
+                    >
+                      Stock {currentIndex + 1} of {totalCount}
+                    </Typography>
+                    <IconButton
+                      onClick={goNext}
+                      size="small"
+                      aria-label="Next stock"
+                      disabled={totalCount <= 1}
+                    >
+                      <ChevronRightIcon />
+                    </IconButton>
+                  </Box>
                 )}
                 <IconButton onClick={onClose} size="large">
                   <CloseIcon />
