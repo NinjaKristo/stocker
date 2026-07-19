@@ -39,7 +39,7 @@ ZAI_GLM_47_FLASH = ModelConfig(
 )
 
 GROQ_QWEN3_32B = ModelConfig(
-    model_id="groq/qwen/qwen3-32b",
+    model_id="groq/qwen/qwen3.6-27b",
     temperature=0.6,
     max_tokens=8000,
     top_p=0.95,
@@ -60,30 +60,30 @@ GROQ_LLAMA_8B = ModelConfig(
 
 # Use-case presets
 CHATBOT_PRESET = ModelPreset(
-    primary=GROQ_QWEN3_32B,
-    fallbacks=[GROQ_LLAMA_70B],
+    primary=GROQ_LLAMA_70B,
+    fallbacks=[GROQ_LLAMA_8B],
 )
 
 RESEARCH_PRESET = ModelPreset(
-    primary=GROQ_QWEN3_32B,
-    fallbacks=[GROQ_LLAMA_70B],
+    primary=GROQ_LLAMA_70B,
+    fallbacks=[GROQ_LLAMA_8B],
 )
 
 # Extraction/merge run on Groq (free, env key) by default. Minimax/Z.AI are
 # pay/deprecated here — kept as ModelConfigs above for explicit routing only.
 EXTRACTION_PRESET = ModelPreset(
-    primary=GROQ_QWEN3_32B,
-    fallbacks=[GROQ_LLAMA_70B],
+    primary=GROQ_LLAMA_70B,
+    fallbacks=[GROQ_LLAMA_8B],
 )
 
 MERGE_PRESET = ModelPreset(
-    primary=GROQ_QWEN3_32B,
-    fallbacks=[GROQ_LLAMA_70B],
+    primary=GROQ_LLAMA_70B,
+    fallbacks=[GROQ_LLAMA_8B],
 )
 
 REPORT_PRESET = ModelPreset(
-    primary=GROQ_QWEN3_32B,
-    fallbacks=[GROQ_LLAMA_70B],
+    primary=GROQ_LLAMA_70B,
+    fallbacks=[GROQ_LLAMA_8B],
 )
 
 COMPRESSION_PRESET = ModelPreset(
@@ -127,7 +127,7 @@ HERMES_MODEL_ID = "hermes/hermes-agent"
 OLLAMA_MODEL_PREFIX = "ollama/"
 
 AVAILABLE_MODELS = [
-    {"id": "groq/qwen/qwen3-32b", "name": "Qwen 3 32B (Groq, free)", "provider": "groq", "category": "cloud"},
+    {"id": "groq/qwen/qwen3.6-27b", "name": "Qwen 3.6 27B (Groq, free)", "provider": "groq", "category": "cloud"},
     {"id": "groq/llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq, free)", "provider": "groq", "category": "cloud"},
     {"id": "groq/llama-3.1-8b-instant", "name": "Llama 3.1 8B (Groq, free)", "provider": "groq", "category": "cloud"},
     {
@@ -139,7 +139,7 @@ AVAILABLE_MODELS = [
 ]
 
 _GROQ_MODEL_IDS = {
-    "groq/qwen/qwen3-32b",
+    "groq/qwen/qwen3.6-27b",
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-8b-instant",
 }
@@ -157,10 +157,10 @@ _OLLAMA_ALLOWED_USE_CASES = {"extraction", "merge", "ibd_classification"}
 
 
 DEFAULT_MODEL_BY_USE_CASE: dict[str, str] = {
-    "chatbot": "groq/qwen/qwen3-32b",
-    "research": "groq/qwen/qwen3-32b",
-    "extraction": "groq/qwen/qwen3-32b",
-    "merge": "groq/qwen/qwen3-32b",
+    "chatbot": "groq/llama-3.3-70b-versatile",
+    "research": "groq/llama-3.3-70b-versatile",
+    "extraction": "groq/llama-3.3-70b-versatile",
+    "merge": "groq/llama-3.3-70b-versatile",
     "ibd_classification": "groq/llama-3.3-70b-versatile",
 }
 
