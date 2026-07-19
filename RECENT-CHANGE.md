@@ -2,30 +2,22 @@
 
 `codex resume -C "C:\Users\micro\github\FINANCE\stock-screener" 019f66bb-57c3-7483-8cf9-c35c63143e8c`
 
-> Daily chart freshness repair  
-> Completed: 2026-07-17  
-> Branch: `stocker/fix/daily-chart-freshness`  
-> Commit: `09a3da6b`
+> Delayed five-minute chart mode
+>
+> Completed: 2026-07-19
+>
+> Branch: `feat/delayed-intraday-charts`
+>
+> Bead: `stockscreenclaude-m4l`
 
 ---
 
 ## Problem
 
-Charts were showing prices from 10 to 11 days earlier. Reloading the browser did not
-make them current because the chart endpoints read cached daily bars; a page refresh
-does not download new market data.
-
-The scheduled data task was running, but its Celery worker used the prefork pool while
-the Yahoo client used one process-wide `curl_cffi` session. The mismatch caused the
-worker to crash with `SIGSEGV` after pandas-related errors such as:
-
-```text
-'tuple_iterator' object is not callable
-'Timestamp' object is not iterable
-```
-
-Before repair, 7,534 of 10,084 tracked symbols ended on July 6, 2026. Only SPY had a
-July 16 bar.
+The repaired daily charts show the latest completed trading day, but they cannot show
+what happened during the session. Reloading a daily chart only rereads daily cache and
+does not create intraday bars. The application needed a faster view without claiming
+free delayed data was exchange-grade real-time data.
 
 ---
 
@@ -33,76 +25,75 @@ July 16 bar.
 
 | Action | Problem solved | Method used | Passing evidence |
 |---|---|---|---|
-| Changed only `celery-datafetch` to `--pool=solo --concurrency=1` | Prefork workers were sharing a process-global Yahoo session unsafely and crashing before data could be saved | Added a worker-command contract test, rebuilt the service, and inspected the live Celery startup configuration | Contract test passed; live worker reported solo pool/concurrency 1; refresh completed without `SIGSEGV` |
-| Added canonical Yahoo-frame normalization | yfinance can return flat or MultiIndex frames, with the ticker on either column level; downstream code could misread those shapes | Added fixtures for single-symbol flat data and both MultiIndex orientations | Focused ingestion tests passed for all supported shapes |
-| Standardized Date, OHLCV, numeric values, ordering, and duplicate handling | Invalid or inconsistent rows could enter the cache/persistence path | Validated required columns and dates before returning a canonical frame | Invalid/noncanonical-frame rejection test passed |
-| Persisted PostgreSQL rows before publishing Redis data | Redis could show data that was never durably committed, and database failures could be counted as successful refreshes | Forced a database failure in a unit test and asserted rollback, exception propagation, and no Redis publish | Database-failure/no-publication test passed |
-| Switched row conversion from `iterrows` to `itertuples` | The crashing worker had failed inside pandas iterator behavior during persistence | Added a single-row database-persistence regression test using the canonical frame path | Single-row persistence test passed |
-| Added `Data through <market date>` to the shared candlestick component | Users could not distinguish stale market data from a freshly reloaded page | Extracted latest-bar selection and formatting into tested frontend utilities | 2 frontend unit tests passed; five live charts showed `Data through Jul 16, 2026` |
-| Kept market-data date separate from response fetch time | Browser refresh made the page look refreshed even though its underlying bars were unchanged | Rendered the newest candle date independently of cache/load metadata | Visual acceptance confirmed the market date remained explicit after reload |
-| Added `frontend/.dockerignore` | A Linux Docker build copied Windows `node_modules`, then failed because it tried to run `node.exe` | Excluded host dependency/build folders and rebuilt the frontend image | Second Docker build passed |
+| Added `GET /v1/stocks/{symbol}/intraday?interval=5m` | Daily cache endpoints cannot represent intraday timestamps or provenance | Added a separate typed response with timestamped OHLCV bars, provider, latest-bar time, fetch time, cache status, and `is_realtime` | Endpoint contract and error tests passed |
+| Kept intraday data outside PostgreSQL daily bars | Mixing five-minute and daily rows would corrupt the durable daily price contract | Created a dedicated read-through service that never calls daily cache persistence | Service tests assert the provider path and isolated payload |
+| Added a 60-second Redis response cache | Repeated chart clicks could waste provider capacity and trigger throttling | Cache key is scoped by version, symbol, and interval; cache failure degrades to a rate-limited live request | Cache-hit test proves the second request avoids the provider |
+| Reused the distributed Yahoo rate limiter | Concurrent users could exceed a free public provider's practical request capacity | The service calls the existing `YFinanceService` with its Redis-backed limiter | Live AAPL request succeeded; fallback remains available if Redis is down |
+| Offloaded the provider call from FastAPI's event loop | A synchronous network request inside an async route could pause unrelated API requests | Route executes the service through Starlette's worker-thread helper | Focused endpoint suite passed after the change |
+| Normalized provider frames into timezone-aware bars | Intraday data needs timestamps, not date-only strings, and exchanges use different time zones | Validated OHLCV columns, rejected non-finite prices, preserved provider offsets, sorted by absolute time, and normalized volume | Timezone, malformed-frame, and unavailable-provider tests passed |
+| Added `5 min delayed` to the shared chart | Users had no way to select a newer intraday view | Added a third interactive timeframe backed by React Query with a 60-second stale time | Component interaction test clicks the selector and verifies the endpoint call |
+| Disabled RS in intraday mode | The RS series is daily and would be misleading beside five-minute candles | Intraday selection clears old series, disables RS, and fits the new time axis | Component test verifies RS is disabled and the chart receives numeric UTC timestamps |
+| Displayed source and actual latest-bar time | A fresh HTTP response could still contain an older provider bar | Label reads `Delayed 5 min`, provider name, `bar <time>`, and separate `loaded <time>` | Component and formatting tests passed |
 
 ---
 
-## Test Execution
+## Live Result
+
+A live provider request for AAPL on Sunday, July 19 returned:
+
+```text
+source=Yahoo Finance via yfinance
+is_realtime=False
+bars=390
+latest_bar_at=2026-07-17T15:55:00-04:00
+```
+
+That is the correct honest result for a closed weekend market: five trading days of
+five-minute bars, ending at Friday's final available interval rather than pretending a
+Sunday stream exists.
+
+---
+
+## Verification
 
 ### Passed for this change
 
 ```text
-Backend worker + Yahoo ingestion tests:       48 passed, 3 skipped
-Additional refresh/calendar/bundle tests:     60 passed
-Focused backend total:                       108 passed, 3 skipped
-Frontend chart-date tests:                     2 passed
+Focused backend and related price endpoints:  16 passed
+Focused frontend API/chart tests:              6 passed
 Frontend lint:                                 passed, 0 errors
 Frontend production build:                     passed
-Frontend Docker build:                         passed
-Live scheduled refresh:                        completed in 153.17 seconds
+Backend compile check:                         passed
+Live public-provider request:                  passed, 390 AAPL bars
 ```
 
-The live refresh used the existing database and environment. It returned `partial`
-with source `github+live`: 27 symbols were refreshed from the live provider after the
-daily bundle sync, while 124 upstream-provider rejections were retained as failures
-instead of being hidden.
+### Repository-wide baseline failures
 
-### Live chart acceptance
+The wide gates were also run. Their failures are outside this change:
 
-The application was checked with local Playwright and Chrome against the repaired UI.
-Each representative chart rendered canvas content and displayed the correct label:
-
-| Ticker | Latest verified daily bar |
-|---|---|
-| SPY | 2026-07-16 |
-| AAPL | 2026-07-16 |
-| MSFT | 2026-07-16 |
-| NVDA | 2026-07-16 |
-| AMZN | 2026-07-16 |
-
----
-
-## Repository-Wide Baseline Failures
-
-These failures were found while widening verification. They are not caused by the
-daily-chart repair, and each has a follow-up issue rather than being omitted from the
-report.
-
-| Gate | Existing problem | Tracking issue |
+| Gate | Result | Existing problem |
 |---|---|---|
-| Full frontend suite | 30 ResultsTable failures because tests render `TickerLink` without Router context | `stockscreenclaude-ob3` |
-| Full backend root collection | An integration test performs an unauthenticated request to hardcoded `localhost:8000` during collection | `stockscreenclaude-03c` |
-| Full backend unit suite | 4,716 passed, 6 skipped, and 1 unrelated theme model-selection failure caused by runtime registry fallback | `stockscreenclaude-oxd` |
+| Full frontend suite | 30 failures | `ResultsTable` tests render `TickerLink` without Router context; tracked as `stockscreenclaude-ob3` |
+| Full backend unit suite | 4,713 passed, 6 skipped, 11 failed | Eight stale expectations still assert removed Minimax/Z.AI models after local Groq-routing commits; three FX stale-date tests misclassify Saturday as stale when run on Sunday |
+
+The weekend FX defect is tracked as `stockscreenclaude-dla`. The Groq expectation files
+already have uncommitted corrections in the main working tree and were not copied into
+this isolated feature branch.
 
 ---
 
 ## Files Changed
 
 ```text
-backend/app/services/bulk_data_fetcher.py
-backend/app/services/price_cache_service.py
-backend/tests/unit/test_market_worker_config.py
-backend/tests/unit/test_yahoo_batch_ingestion.py
-docker-compose.yml
-frontend/.dockerignore
+backend/app/api/v1/stocks.py
+backend/app/schemas/stock.py
+backend/app/services/intraday_price_service.py
+backend/tests/unit/test_intraday_price_service.py
+backend/tests/unit/test_stocks_intraday.py
+frontend/src/api/priceHistory.js
+frontend/src/api/priceHistory.test.js
 frontend/src/components/Charts/CandlestickChart.jsx
+frontend/src/components/Charts/CandlestickChart.test.jsx
 frontend/src/components/Charts/candlestickData.js
 frontend/src/components/Charts/candlestickData.test.js
 ```
@@ -111,7 +102,6 @@ frontend/src/components/Charts/candlestickData.test.js
 
 ## Result
 
-The daily chart pipeline is working again and exposes its actual market-data date.
-The repaired stack provides latest-completed-day charts, not real-time charts. Delayed
-intraday support remains separate work under `stockscreenclaude-m4l`, and the 124
-provider-rejected symbols are tracked under `stockscreenclaude-jm9`.
+Interactive charts now offer an honest, source-labeled five-minute delayed mode while
+retaining durable daily and weekly views. The application still does not claim or
+provide exchange-grade real-time streaming data.

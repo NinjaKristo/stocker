@@ -3,7 +3,7 @@
 `codex resume -C "C:\Users\micro\github\FINANCE\stock-screener" 019f66bb-57c3-7483-8cf9-c35c63143e8c`
 
 > Stock Screener project status and operating handoff  
-> Last updated: 2026-07-17
+> Last updated: 2026-07-19
 
 ---
 
@@ -17,9 +17,14 @@ price-refresh worker had been crashing before it could persist fresh bars. The r
 worker completed a live US-market refresh without the prior crash, and 9,973 symbols
 now contain a July 16, 2026 daily bar.
 
-This is daily end-of-day data, not real-time data. Charts now display an explicit
-`Data through <date>` label so a browser reload cannot be mistaken for a market-data
-update.
+Charts now provide two honest freshness levels:
+
+- Daily and weekly views use durable end-of-day data and display `Data through <date>`.
+- Interactive charts can switch to `5 min delayed`, which fetches five trading days of
+  public delayed bars and displays the source plus the actual latest bar time.
+
+Neither mode is labeled real-time. A browser reload cannot be mistaken for a new market
+bar.
 
 ### Delivery status
 
@@ -31,9 +36,12 @@ update.
 | Live worker | Running with the repaired solo-pool configuration |
 | Daily-bar coverage | 9,973 US symbols with a July 16, 2026 bar |
 | Acceptance tickers | SPY, AAPL, MSFT, NVDA, and AMZN all verified through July 16 |
-| Real-time or delayed intraday charts | Not implemented; tracked as `stockscreenclaude-m4l` |
+| Delayed intraday branch | `feat/delayed-intraday-charts` |
+| Delayed intraday status | Implemented and pushed for merge |
+| Real-time streaming quotes | Not implemented |
 
-The repair is on its own pushed branch. It is not described as merged into `main`.
+The daily freshness repair is merged into `main`. The delayed intraday addition remains
+on its feature branch until reviewed and merged.
 
 ---
 
@@ -50,7 +58,7 @@ through this launcher rather than the disposable `CJN-TEST` sandbox.
 
 ---
 
-## 3. What The Freshness Repair Changed
+## 3. What The Data Repairs Changed
 
 1. **Made the market-data worker process-safe.** The `celery-datafetch` service now
    uses Celery's solo pool with one worker, matching the process-wide Yahoo HTTP
@@ -66,6 +74,15 @@ through this launcher rather than the disposable `CJN-TEST` sandbox.
    bar date separately from the time the page fetched the cached response.
 6. **Made frontend Docker builds platform-safe.** `frontend/.dockerignore` prevents
    Windows `node_modules` binaries from being copied into Linux images.
+7. **Added a separate delayed intraday contract.** The backend returns five-minute
+   timestamped bars with source, cache, fetch-time, latest-bar, and `is_realtime: false`
+   metadata without writing intraday bars into the durable daily cache.
+8. **Added `5 min delayed` to shared interactive charts.** The chart disables weekly
+   aggregation and RS overlays in intraday mode, converts timestamps correctly, and
+   displays the provider plus actual latest-bar time.
+9. **Protected the provider and backend.** Intraday responses use a 60-second Redis
+   cache, the existing distributed Yahoo rate limiter, and a worker thread so provider
+   latency does not block FastAPI's event loop.
 
 Full implementation and test evidence is recorded in `RECENT-CHANGE.md`.
 
@@ -95,6 +112,9 @@ Full implementation and test evidence is recorded in `RECENT-CHANGE.md`.
 | Frontend production build | Passed |
 | Frontend Docker build | Passed after adding `.dockerignore` |
 | Live chart check | Five representative charts rendered with `Data through Jul 16, 2026` |
+| Delayed intraday backend tests | 16 passed across new and related price endpoints |
+| Delayed intraday frontend tests | 6 passed across API, timestamp, and selector behavior |
+| Live delayed-data check | AAPL returned 390 five-minute bars through Jul 17, 2026 at 3:55 PM ET |
 
 ---
 
@@ -102,11 +122,11 @@ Full implementation and test evidence is recorded in `RECENT-CHANGE.md`.
 
 | Issue | Purpose |
 |---|---|
-| `stockscreenclaude-m4l` | Add lawful public/free delayed intraday chart data |
 | `stockscreenclaude-jm9` | Reconcile 124 provider-rejected US price symbols |
 | `stockscreenclaude-ob3` | Add Router context to existing ResultsTable tests |
 | `stockscreenclaude-03c` | Remove hardcoded live-server dependency from backend test collection |
 | `stockscreenclaude-oxd` | Stabilize the unrelated theme model-selection unit test |
+| `stockscreenclaude-dla` | Make stale FX quote tests correct on weekends |
 
 The full frontend and backend suites have pre-existing failures described in
 `RECENT-CHANGE.md`. They are separated from the tests for this repair so the report
@@ -116,9 +136,12 @@ does not claim a clean repository-wide suite where one does not exist.
 
 ## 6. Data Expectations
 
-- **Current capability:** daily end-of-day OHLCV bars.
+- **Current capability:** daily end-of-day OHLCV bars plus on-demand five-minute
+  delayed bars for interactive charts.
 - **Expected freshness:** the latest completed market day after the scheduled refresh
   succeeds.
-- **Not current capability:** real-time quotes or intraday candlesticks.
+- **Not current capability:** exchange-grade real-time streaming quotes.
 - **How to judge a chart:** read the `Data through` label. The page load time only says
   when the cache was read; it does not say when the market bar was produced.
+- **How to use intraday:** select `5 min delayed` and read the `bar <time>` label. It
+  identifies the latest provider bar, while `loaded <time>` identifies the request.
