@@ -2,10 +2,22 @@ import { useRef, useEffect, useLayoutEffect, useState, useMemo } from 'react';
 import { Box, CircularProgress, Alert, AlertTitle, Button, ToggleButtonGroup, ToggleButton, useTheme, Typography } from '@mui/material';
 import { createPriceChartSeries } from './createPriceChartSeries';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchPriceHistory, fetchRSLine, priceHistoryKeys, PRICE_HISTORY_STALE_TIME } from '../../api/priceHistory';
+import {
+  fetchIntradayPriceHistory,
+  fetchPriceHistory,
+  fetchRSLine,
+  INTRADAY_PRICE_STALE_TIME,
+  priceHistoryKeys,
+  PRICE_HISTORY_STALE_TIME,
+} from '../../api/priceHistory';
 import { rsBandForRange } from './rsBand';
 import ChartSkeleton from './ChartSkeleton';
-import { formatPriceDate, getLatestPriceDate, transformToCandlestickData } from './candlestickData';
+import {
+  formatPriceDate,
+  formatPriceTimestamp,
+  getLatestPriceDate,
+  transformToCandlestickData,
+} from './candlestickData';
 
 // Debounce utility
 const debounce = (fn, ms) => {
@@ -60,6 +72,7 @@ function CandlestickChart({
   const rsMarkersRef = useRef(null); // Blue-dot markers primitive on the RS line
   const prevSymbolRef = useRef(null); // Track previous symbol
   const shouldRestoreRangeRef = useRef(false); // Flag to restore range on next data update
+  const shouldFitModeRef = useRef(false); // Intraday/daily switches use incompatible time axes
   const isFirstDataLoadRef = useRef(true); // Track first data load
   const prevCloseMapRef = useRef(new Map()); // Map of date -> previous close for % change calculation
   const latestCandleRef = useRef(null); // Store latest candle for default display
@@ -96,12 +109,27 @@ function CandlestickChart({
     placeholderData: getCachedData,
   });
 
+  const intradaySelected = !priceData && timeframe === 'intraday';
+  const {
+    data: intradayResponse,
+    isLoading: isIntradayLoading,
+    isFetching: isIntradayFetching,
+    error: intradayError,
+    refetch: refetchIntraday,
+    dataUpdatedAt: intradayDataUpdatedAt,
+  } = useQuery({
+    queryKey: priceHistoryKeys.intraday(symbol, '5m'),
+    queryFn: () => fetchIntradayPriceHistory(symbol, '5m'),
+    enabled: !!symbol && intradaySelected,
+    staleTime: INTRADAY_PRICE_STALE_TIME,
+  });
+
   // Live RS line + blue-dot dates (interactive surfaces only). Static charts
   // carry the RS payload in their bundle instead, so the query stays disabled.
   const { data: fetchedRsData } = useQuery({
     queryKey: priceHistoryKeys.rsLine(symbol, period),
     queryFn: () => fetchRSLine(symbol, period),
-    enabled: !!symbol && !priceData && !compact && showRSLine,
+    enabled: !!symbol && !priceData && !compact && showRSLine && timeframe === 'daily',
     staleTime: PRICE_HISTORY_STALE_TIME,
     keepPreviousData: true,
   });
@@ -119,15 +147,31 @@ function CandlestickChart({
   // Whether the RS overlay can render at all here (drives the toggle's visibility).
   const rsAvailable = !priceData || (Array.isArray(rsLineData) && rsLineData.length > 0);
 
-  const apiData = priceData ?? fetchedApiData;
-  const effectiveDataUpdatedAt = dataUpdatedAtOverride ?? dataUpdatedAt;
-  const effectiveIsLoading = Boolean(!priceData && isLoading);
-  const effectiveIsFetching = Boolean(!priceData && isFetching);
-  const effectiveError = priceData ? null : error;
-  const effectiveRefetch = priceData ? () => Promise.resolve({ data: priceData }) : refetch;
+  const intradayBars = useMemo(
+    () => intradayResponse?.bars || null,
+    [intradayResponse],
+  );
+  const apiData = intradaySelected ? intradayBars : (priceData ?? fetchedApiData);
+  const effectiveDataUpdatedAt = intradaySelected
+    ? intradayDataUpdatedAt
+    : (dataUpdatedAtOverride ?? dataUpdatedAt);
+  const effectiveIsLoading = intradaySelected
+    ? isIntradayLoading
+    : Boolean(!priceData && isLoading);
+  const effectiveIsFetching = intradaySelected
+    ? isIntradayFetching
+    : Boolean(!priceData && isFetching);
+  const effectiveError = priceData ? null : (intradaySelected ? intradayError : error);
+  const effectiveRefetch = priceData
+    ? () => Promise.resolve({ data: priceData })
+    : (intradaySelected ? refetchIntraday : refetch);
   const dataThroughText = useMemo(
     () => formatPriceDate(getLatestPriceDate(apiData)),
     [apiData],
+  );
+  const latestIntradayBarText = useMemo(
+    () => formatPriceTimestamp(intradayResponse?.latest_bar_at),
+    [intradayResponse],
   );
 
   // Format last updated time
@@ -148,6 +192,10 @@ function CandlestickChart({
   // When the timeframe toggle is hidden, force daily so the chart can't
   // remain on a stale weekly aggregation chosen before the toggle disappeared.
   const effectiveTimeframe = hideTimeframeToggle ? 'daily' : timeframe;
+
+  useEffect(() => {
+    shouldFitModeRef.current = true;
+  }, [effectiveTimeframe]);
 
   // Single source of truth for "is the RS line actually drawn right now". The
   // RS series is daily-only and toggleable, so it's hidden on weekly or when
@@ -313,25 +361,25 @@ function CandlestickChart({
     }
 
     // Update volume data
-    if (volumeSeriesRef.current && chartData.volume.length > 0) {
+    if (volumeSeriesRef.current) {
       volumeSeriesRef.current.setData(chartData.volume);
     }
 
     // Update candlestick data
-    if (candlestickSeriesRef.current && chartData.candlesticks.length > 0) {
+    if (candlestickSeriesRef.current) {
       candlestickSeriesRef.current.setData(chartData.candlesticks);
     }
 
     // Update EMAs
-    if (ema10SeriesRef.current && chartData.ema10.length > 0) {
+    if (ema10SeriesRef.current) {
       ema10SeriesRef.current.setData(chartData.ema10);
     }
 
-    if (ema20SeriesRef.current && chartData.ema20.length > 0) {
+    if (ema20SeriesRef.current) {
       ema20SeriesRef.current.setData(chartData.ema20);
     }
 
-    if (ema50SeriesRef.current && chartData.ema50.length > 0) {
+    if (ema50SeriesRef.current) {
       ema50SeriesRef.current.setData(chartData.ema50);
     }
 
@@ -364,7 +412,10 @@ function CandlestickChart({
     }
 
     // Check if we should restore the range (symbol changed and new data loaded)
-    if (shouldRestoreRangeRef.current) {
+    if (shouldFitModeRef.current) {
+      shouldFitModeRef.current = false;
+      chartRef.current.timeScale().fitContent();
+    } else if (shouldRestoreRangeRef.current) {
       shouldRestoreRangeRef.current = false; // Clear the flag
 
       if (visibleRange && visibleRange.from && visibleRange.to) {
@@ -495,6 +546,7 @@ function CandlestickChart({
           immediately to its right, so the buttons never cover the price. */}
       {!compact && !showLoading && !showError && !showNoData && (
         <Box
+          title={intradaySelected ? intradayResponse?.disclosure : undefined}
           sx={{
             position: 'absolute',
             top: 10,
@@ -568,6 +620,14 @@ function CandlestickChart({
               >
                 <ToggleButton value="daily">Daily</ToggleButton>
                 <ToggleButton value="weekly">Weekly</ToggleButton>
+                {!priceData && (
+                  <ToggleButton
+                    value="intraday"
+                    title="Delayed five-minute bars from Yahoo Finance; not real-time or for order execution"
+                  >
+                    5 min delayed
+                  </ToggleButton>
+                )}
               </ToggleButtonGroup>
               {/* RS line overlay toggle — shown only where RS data can load
                   (live charts, or static charts whose bundle carries rs_line). */}
@@ -663,7 +723,7 @@ function CandlestickChart({
 
       {/* Price-session indicator. This is deliberately separate from request time:
           reloading an old cache must never look like fresh market data. */}
-      {!showLoading && !showError && !showNoData && dataThroughText && !showRefreshIndicator && (
+      {!showLoading && !showError && !showNoData && (intradaySelected ? latestIntradayBarText : dataThroughText) && !showRefreshIndicator && (
         <Box
           sx={{
             position: 'absolute',
@@ -677,7 +737,9 @@ function CandlestickChart({
           }}
         >
           <Typography variant="caption" sx={{ color: '#999', fontSize: '0.65rem' }}>
-            {compact ? `Through ${dataThroughText}` : `Data through ${dataThroughText}`}
+            {intradaySelected
+              ? `Delayed 5 min · ${intradayResponse?.source || 'public source'} · bar ${latestIntradayBarText}`
+              : (compact ? `Through ${dataThroughText}` : `Data through ${dataThroughText}`)}
             {!compact && lastUpdatedText ? ` · loaded ${lastUpdatedText}` : ''}
           </Typography>
         </Box>
