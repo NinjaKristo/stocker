@@ -249,9 +249,18 @@ export default function ScanControlBar({
 
         <Box sx={{ flexGrow: 1 }} />
 
-        <Box sx={{ fontSize: '11px', color: 'text.secondary' }}>
-          {stockCountLabel(universeMarket, universeScope, universeStats, statsLoading, selectedScopeOption)}
-        </Box>
+        <Tooltip
+          arrow
+          title={
+            universeMarket
+              ? 'Number of stocks in the selected market/universe that the scan will screen against your chosen strategies and filters.'
+              : 'A scan runs your selected strategies over one market’s stock universe. Pick a Market above first — until then there is nothing to screen, so the Scan button stays disabled. “Start” = begin screening that market.'
+          }
+        >
+          <Box sx={{ fontSize: '11px', color: 'text.secondary', cursor: 'help' }}>
+            {stockCountLabel(universeMarket, universeScope, universeStats, statsLoading, selectedScopeOption)}
+          </Box>
+        </Tooltip>
 
         {scanStatus === 'running' ? (
           <Button

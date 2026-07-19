@@ -274,9 +274,10 @@ function StaticHomePage() {
         testId="top-scan-candidates-section"
         title="Top Scan Candidates"
         subtitle={
-          topCandidateFilters.minVolume == null
+          `Today’s highest-conviction names: the top composite scores across the active screens (CANSLIM / Minervini strength, relative strength, and volume), ranked best-first and filtered for tradeable liquidity. `
+          + (topCandidateFilters.minVolume == null
             ? 'No default liquidity floor. Click a row for chart details.'
-            : `Dollar volume >= ${formatNumber(topCandidateFilters.minVolume)}. Click a row for chart details.`
+            : `Dollar volume >= ${formatNumber(topCandidateFilters.minVolume)}. Click a row for chart details.`)
         }
         rows={topResults}
         chartEnabledSymbols={chartEnabledSymbols}

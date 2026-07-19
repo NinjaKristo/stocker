@@ -8,6 +8,7 @@ import {
   Chip,
   Fade,
   Button,
+  Tooltip,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
@@ -353,7 +354,11 @@ function ChartViewerModal({
 
                 {/* Group Rank Box */}
                 {industryGroup && (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <Tooltip
+                    arrow
+                    title="Industry Group Rank — this stock's IBD industry group ranked by 6-month relative strength against all ~192 groups. 1 = strongest group (leaders cluster here); higher numbers = weaker. Lower is better. Great stocks tend to come from top-ranked groups."
+                  >
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'help' }}>
                     <Box sx={{
                       borderRadius: 1,
                       px: 1.5,
@@ -374,6 +379,7 @@ function ChartViewerModal({
                       Grp Rnk
                     </Typography>
                   </Box>
+                  </Tooltip>
                 )}
 
                 {/* ADR Box */}
