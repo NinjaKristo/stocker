@@ -524,7 +524,7 @@ export default function RRGChart({ data, isLoading, error, onSelectGroup, height
               <Scatter
                 data={currentPoints}
                 isAnimationActive={false}
-                onClick={(pt) => onSelectGroup?.(pt?.industry_group)}
+                onClick={(pt) => onSelectGroup?.(pt?.industry_group ?? pt?.payload?.industry_group)}
                 onMouseEnter={(pt) => setHoveredGroup(pt?.industry_group ?? pt?.payload?.industry_group)}
                 onMouseLeave={() => setHoveredGroup(null)}
                 cursor="pointer"

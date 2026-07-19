@@ -25,6 +25,17 @@ import { SCREENER_OPTIONS } from '../constants';
 import { selectRuntimeUniverseOption } from '../runtimeUniverseSelections';
 import { getSelectionCount } from '../universeSelection';
 
+// What each strategy chip screens for. Selecting a chip includes that screener
+// in the NEXT scan run (press Scan to apply) — it does not filter live results.
+const SCREENER_TIPS = {
+  minervini: 'Minervini Trend Template — Stage-2 uptrend, moving averages stacked 50>150>200, price well above its 52-week low, strong RS. Toggle to include it; press Scan to apply.',
+  canslim: 'CANSLIM (O’Neil) — strong current & annual EPS growth, new highs, high relative strength, volume and institutional demand. Toggle to include it; press Scan to apply.',
+  ipo: 'IPO screen — recently-listed leaders with sound bases and strong relative strength since listing. Toggle to include it; press Scan to apply.',
+  custom: 'Custom — screen with your own price / RS / volume / growth thresholds (set them in the panel that appears). Toggle to include it; press Scan to apply.',
+  volume_breakthrough: 'Volume Breakthrough — unusual up-volume vs the stock’s own history (institutional accumulation and breakouts). Toggle to include it; press Scan to apply.',
+  setup_engine: 'Setup Engine — detects chart setups/patterns (flat base, cup, VCP-like) and scores setup / quality / readiness, adding those columns. Selecting it changes the NEXT scan only — nothing happens until you press Scan.',
+};
+
 function stockCountLabel(universeMarket, universeScope, universeStats, statsLoading, selectedScopeOption) {
   if (!universeMarket) {
     return 'Pick a market to start';
@@ -204,16 +215,19 @@ export default function ScanControlBar({
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
           <Box sx={{ fontSize: '11px', color: 'text.secondary', mr: 0.5 }}>Strategies:</Box>
           {SCREENER_OPTIONS.map((screener) => (
-            <Chip
-              key={screener.id}
-              label={screener.label}
-              size="small"
-              variant={selectedScreeners.includes(screener.id) ? 'filled' : 'outlined'}
-              color={selectedScreeners.includes(screener.id) ? 'primary' : 'default'}
-              onClick={() => onScreenerToggle(screener.id)}
-              disabled={controlsDisabled}
-              sx={{ height: 24, fontSize: '10px' }}
-            />
+            <Tooltip key={screener.id} arrow title={SCREENER_TIPS[screener.id] || screener.label}>
+              <span style={{ display: 'inline-flex' }}>
+                <Chip
+                  label={screener.label}
+                  size="small"
+                  variant={selectedScreeners.includes(screener.id) ? 'filled' : 'outlined'}
+                  color={selectedScreeners.includes(screener.id) ? 'primary' : 'default'}
+                  onClick={() => onScreenerToggle(screener.id)}
+                  disabled={controlsDisabled}
+                  sx={{ height: 24, fontSize: '10px' }}
+                />
+              </span>
+            </Tooltip>
           ))}
         </Box>
 
