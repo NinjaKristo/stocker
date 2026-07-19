@@ -82,6 +82,39 @@ export const getLatestPriceDate = (priceData) => {
   }, null);
 };
 
+/**
+ * Best-effort TradingView chart deep-link for an app ticker. US tickers pass
+ * through (TradingView resolves them); common non-US suffixes map to their
+ * TradingView exchange prefix.
+ */
+export const tradingViewChartUrl = (symbol) => {
+  const base = 'https://www.tradingview.com/chart/';
+  if (!symbol) return base;
+  const s = String(symbol).toUpperCase().trim();
+  const suffixMap = [
+    ['.HK', (b) => `HKEX:${b.replace(/^0+/, '')}`],
+    ['.TWO', (b) => `TPEX:${b}`],
+    ['.TW', (b) => `TWSE:${b}`],
+    ['.T', (b) => `TSE:${b}`],
+    ['.KS', (b) => `KRX:${b}`],
+    ['.KQ', (b) => `KRX:${b}`],
+    ['.SS', (b) => `SSE:${b}`],
+    ['.SZ', (b) => `SZSE:${b}`],
+    ['.NS', (b) => `NSE:${b}`],
+    ['.BO', (b) => `BSE:${b}`],
+    ['.DE', (b) => `XETR:${b}`],
+    ['.F', (b) => `FWB:${b}`],
+  ];
+  let tvSymbol = s;
+  for (const [suffix, toTv] of suffixMap) {
+    if (s.endsWith(suffix)) {
+      tvSymbol = toTv(s.slice(0, -suffix.length));
+      break;
+    }
+  }
+  return `${base}?symbol=${encodeURIComponent(tvSymbol)}`;
+};
+
 export const formatPriceDate = (date) => {
   if (!date) return null;
   const parsed = new Date(`${date}T12:00:00Z`);

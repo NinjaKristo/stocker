@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchPriceHistory, fetchRSLine, priceHistoryKeys, PRICE_HISTORY_STALE_TIME } from '../../api/priceHistory';
 import { rsBandForRange } from './rsBand';
 import ChartSkeleton from './ChartSkeleton';
-import { formatPriceDate, getLatestPriceDate, transformToCandlestickData } from './candlestickData';
+import { formatPriceDate, getLatestPriceDate, tradingViewChartUrl, transformToCandlestickData } from './candlestickData';
 
 // Debounce utility
 const debounce = (fn, ms) => {
@@ -597,6 +597,38 @@ function CandlestickChart({
           height: '100%',
         }}
       />
+
+      {/* TradingView attribution — deep-links to this symbol's chart on
+          tradingview.com (replaces the library's generic logo). */}
+      {symbol && !showLoading && !showError && !showNoData && (
+        <Box
+          component="a"
+          href={tradingViewChartUrl(symbol)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Open ${symbol} on TradingView`}
+          sx={{
+            position: 'absolute',
+            bottom: 6,
+            left: 8,
+            zIndex: 11,
+            display: 'flex',
+            alignItems: 'center',
+            px: 0.75,
+            py: 0.25,
+            borderRadius: 1,
+            textDecoration: 'none',
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            letterSpacing: '0.02em',
+            color: isDarkMode ? '#9db2c9' : '#5a6b7b',
+            bgcolor: isDarkMode ? 'rgba(30, 30, 30, 0.55)' : 'rgba(255, 255, 255, 0.6)',
+            '&:hover': { color: '#2196f3' },
+          }}
+        >
+          TradingView
+        </Box>
+      )}
 
       {/* RS strip label - pinned to the top of the RS band (scaleMargins.top
           of the 'rs' scale) so the lower line is clearly the relative-strength

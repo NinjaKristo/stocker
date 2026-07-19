@@ -16,6 +16,9 @@ export function createPriceChartSeries(container, { width, height, isDarkMode, i
     width,
     height,
     layout: {
+      // Suppress the library's generic attribution logo; CandlestickChart renders
+      // its own TradingView badge that deep-links to the current symbol's chart.
+      attributionLogo: false,
       background: { type: 'solid', color: isDarkMode ? '#1e1e1e' : '#ffffff' },
       textColor: isDarkMode ? '#d1d4dc' : '#333333',
     },
