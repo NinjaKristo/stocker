@@ -69,14 +69,16 @@ RESEARCH_PRESET = ModelPreset(
     fallbacks=[GROQ_LLAMA_70B],
 )
 
+# Extraction/merge run on Groq (free, env key) by default. Minimax/Z.AI are
+# pay/deprecated here — kept as ModelConfigs above for explicit routing only.
 EXTRACTION_PRESET = ModelPreset(
-    primary=MINIMAX_M27,
-    fallbacks=[ZAI_GLM_47_FLASH],
+    primary=GROQ_QWEN3_32B,
+    fallbacks=[GROQ_LLAMA_70B],
 )
 
 MERGE_PRESET = ModelPreset(
-    primary=MINIMAX_M27,
-    fallbacks=[ZAI_GLM_47_FLASH],
+    primary=GROQ_QWEN3_32B,
+    fallbacks=[GROQ_LLAMA_70B],
 )
 
 REPORT_PRESET = ModelPreset(
@@ -92,19 +94,19 @@ COMPRESSION_PRESET = ModelPreset(
 # IBD industry-group classification (closed-set tiebreaker). Low temperature for
 # deterministic single-label selection. This is the *sanctioned* fallback used
 # when the env-driven OpenAI-compatible path (IBD_LLM_*) is not configured.
-IBD_CLASSIFICATION_MINIMAX = ModelConfig(
-    model_id="minimax/MiniMax-M2.7",
+IBD_CLASSIFICATION_GROQ = ModelConfig(
+    model_id="groq/llama-3.3-70b-versatile",
     temperature=0.1,
     max_tokens=200,
 )
-IBD_CLASSIFICATION_ZAI = ModelConfig(
-    model_id="openai/glm-4.7-flash",
+IBD_CLASSIFICATION_GROQ_SMALL = ModelConfig(
+    model_id="groq/llama-3.1-8b-instant",
     temperature=0.1,
     max_tokens=200,
 )
 IBD_CLASSIFICATION_PRESET = ModelPreset(
-    primary=IBD_CLASSIFICATION_MINIMAX,
-    fallbacks=[IBD_CLASSIFICATION_ZAI],
+    primary=IBD_CLASSIFICATION_GROQ,
+    fallbacks=[IBD_CLASSIFICATION_GROQ_SMALL],
 )
 
 
@@ -115,47 +117,51 @@ PROVIDER_ENV_VARS = {
 }
 
 
+# Hermes gateway pseudo-model: routes through the assistant gateway, which runs
+# whatever the in-chat model picker selected (local Ollama, Claude Pro, ChatGPT
+# Plus / Codex — subscription auth is saved in Hermes' auth.json).
+HERMES_MODEL_ID = "hermes/hermes-agent"
+
+# Prefix for dynamic local models served by Ollama (enumerated live, not listed
+# here). Example id: "ollama/gemma4:latest".
+OLLAMA_MODEL_PREFIX = "ollama/"
+
 AVAILABLE_MODELS = [
-    {"id": "minimax/MiniMax-M2.7", "name": "MiniMax M2.7 (Minimax)", "provider": "minimax", "category": "cloud"},
-    {"id": "openai/glm-4.7-flash", "name": "GLM-4.7-Flash (Z.AI)", "provider": "zai", "category": "cloud"},
-    {"id": "groq/qwen/qwen3-32b", "name": "Qwen 3 32B (Groq)", "provider": "groq", "category": "cloud"},
-    {"id": "groq/llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq)", "provider": "groq", "category": "cloud"},
-    {"id": "groq/llama-3.1-8b-instant", "name": "Llama 3.1 8B (Groq)", "provider": "groq", "category": "cloud"},
+    {"id": "groq/qwen/qwen3-32b", "name": "Qwen 3 32B (Groq, free)", "provider": "groq", "category": "cloud"},
+    {"id": "groq/llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq, free)", "provider": "groq", "category": "cloud"},
+    {"id": "groq/llama-3.1-8b-instant", "name": "Llama 3.1 8B (Groq, free)", "provider": "groq", "category": "cloud"},
+    {
+        "id": HERMES_MODEL_ID,
+        "name": "Hermes gateway (assistant model — Claude Pro / ChatGPT Plus / local)",
+        "provider": "hermes",
+        "category": "cloud",
+    },
 ]
 
+_GROQ_MODEL_IDS = {
+    "groq/qwen/qwen3-32b",
+    "groq/llama-3.3-70b-versatile",
+    "groq/llama-3.1-8b-instant",
+}
 
 SUPPORTED_MODELS_BY_USE_CASE: dict[str, set[str]] = {
-    "chatbot": {
-        "groq/qwen/qwen3-32b",
-        "groq/llama-3.3-70b-versatile",
-        "groq/llama-3.1-8b-instant",
-    },
-    "research": {
-        "groq/qwen/qwen3-32b",
-        "groq/llama-3.3-70b-versatile",
-        "groq/llama-3.1-8b-instant",
-    },
-    "extraction": {
-        "minimax/MiniMax-M2.7",
-        "openai/glm-4.7-flash",
-    },
-    "merge": {
-        "minimax/MiniMax-M2.7",
-        "openai/glm-4.7-flash",
-    },
-    "ibd_classification": {
-        "minimax/MiniMax-M2.7",
-        "openai/glm-4.7-flash",
-    },
+    "chatbot": set(_GROQ_MODEL_IDS),
+    "research": set(_GROQ_MODEL_IDS),
+    "extraction": _GROQ_MODEL_IDS | {HERMES_MODEL_ID},
+    "merge": _GROQ_MODEL_IDS | {HERMES_MODEL_ID},
+    "ibd_classification": _GROQ_MODEL_IDS | {HERMES_MODEL_ID},
 }
+
+# Use cases whose model may also be any dynamic local Ollama model.
+_OLLAMA_ALLOWED_USE_CASES = {"extraction", "merge", "ibd_classification"}
 
 
 DEFAULT_MODEL_BY_USE_CASE: dict[str, str] = {
     "chatbot": "groq/qwen/qwen3-32b",
     "research": "groq/qwen/qwen3-32b",
-    "extraction": "minimax/MiniMax-M2.7",
-    "merge": "minimax/MiniMax-M2.7",
-    "ibd_classification": "minimax/MiniMax-M2.7",
+    "extraction": "groq/qwen/qwen3-32b",
+    "merge": "groq/qwen/qwen3-32b",
+    "ibd_classification": "groq/llama-3.3-70b-versatile",
 }
 
 
@@ -214,7 +220,13 @@ def get_model_params(model_config: ModelConfig, **overrides) -> Dict:
 
 
 def is_model_supported_for_use_case(*, model_id: str, use_case: str) -> bool:
-    """Return True when model is sanctioned for the requested use case."""
+    """Return True when model is sanctioned for the requested use case.
+
+    Dynamic local models (``ollama/<model>``) are allowed for the offline-safe
+    use cases; the concrete model list comes from the live Ollama instance.
+    """
+    if use_case in _OLLAMA_ALLOWED_USE_CASES and model_id.startswith(OLLAMA_MODEL_PREFIX):
+        return len(model_id) > len(OLLAMA_MODEL_PREFIX)
     allowed = SUPPORTED_MODELS_BY_USE_CASE.get(use_case)
     if not allowed:
         return False
