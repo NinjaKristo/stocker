@@ -4,9 +4,11 @@
 
 > Delayed five-minute chart mode
 >
-> Completed: 2026-07-19
+> Completed: 2026-07-20
 >
 > Branch: `feat/delayed-intraday-charts`
+>
+> Main: merged and deployed at `a127d5c6`
 >
 > Bead: `stockscreenclaude-m4l`
 
@@ -51,6 +53,11 @@ latest_bar_at=2026-07-17T15:55:00-04:00
 That is the correct honest result for a closed weekend market: five trading days of
 five-minute bars, ending at Friday's final available interval rather than pretending a
 Sunday stream exists.
+
+After the feature was fast-forwarded into `main`, the clean backend and frontend images
+were deployed to the existing Docker stack. An authenticated request through the live
+frontend proxy returned the same 390-bar AAPL contract, and both application containers,
+PostgreSQL, Redis, Celery workers, and Celery Beat were verified running afterward.
 
 ---
 

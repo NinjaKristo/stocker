@@ -3,7 +3,7 @@
 `codex resume -C "C:\Users\micro\github\FINANCE\stock-screener" 019f66bb-57c3-7483-8cf9-c35c63143e8c`
 
 > Stock Screener project status and operating handoff  
-> Last updated: 2026-07-19
+> Last updated: 2026-07-20
 
 ---
 
@@ -37,11 +37,13 @@ bar.
 | Daily-bar coverage | 9,973 US symbols with a July 16, 2026 bar |
 | Acceptance tickers | SPY, AAPL, MSFT, NVDA, and AMZN all verified through July 16 |
 | Delayed intraday branch | `feat/delayed-intraday-charts` |
-| Delayed intraday status | Implemented and pushed for merge |
+| Delayed intraday status | Merged into `main` and deployed |
+| Delayed intraday commit | `b32c2612` (`feat(charts): add delayed five-minute price mode`) |
 | Real-time streaming quotes | Not implemented |
 
-The daily freshness repair is merged into `main`. The delayed intraday addition remains
-on its feature branch until reviewed and merged.
+The daily freshness repair and delayed intraday addition are merged into `main`. The
+clean backend and frontend images were deployed to the running Docker stack on July 20,
+2026; the existing PostgreSQL and Redis volumes were preserved.
 
 ---
 
