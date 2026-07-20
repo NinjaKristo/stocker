@@ -85,7 +85,16 @@ describe('CandlestickChart hourly mode', () => {
     renderWithProviders(<CandlestickChart symbol="AAPL" height={400} />);
 
     await screen.findByText(/Data through Jul 16, 2026/);
-    await user.click(screen.getByRole('button', { name: 'Hourly' }));
+    const hrButton = screen.getByRole('button', { name: 'HR' });
+    const dayButton = screen.getByRole('button', { name: 'Day' });
+    const weekButton = screen.getByRole('button', { name: 'Week' });
+    const rsButton = screen.getByRole('button', { name: 'RS' });
+
+    expect(hrButton.compareDocumentPosition(dayButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dayButton.compareDocumentPosition(weekButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(weekButton.compareDocumentPosition(rsButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(hrButton);
 
     expect(await screen.findByText(/Hourly delayed.*Yahoo Finance.*bar Jul 17/)).toBeInTheDocument();
     expect(mocks.fetchIntradayPriceHistory).toHaveBeenCalledWith('AAPL', '60m');

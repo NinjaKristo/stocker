@@ -20,7 +20,7 @@ now contain a July 16, 2026 daily bar.
 Charts now provide two honest freshness levels:
 
 - Daily and weekly views use durable end-of-day data and display `Data through <date>`.
-- Interactive charts can switch to `HOURLY`, which fetches one month of public delayed
+- Interactive charts can switch to `HR`, which fetches one month of public delayed
   60-minute bars and displays the source plus the actual latest bar time.
 
 Neither mode is labeled real-time. A browser reload cannot be mistaken for a new market
@@ -79,7 +79,7 @@ through this launcher rather than the disposable `CJN-TEST` sandbox.
 7. **Added a separate delayed intraday contract.** The backend returns 60-minute
    timestamped bars with source, cache, fetch-time, latest-bar, and `is_realtime: false`
    metadata without writing intraday bars into the durable daily cache.
-8. **Added `HOURLY` to shared interactive charts.** The chart disables weekly
+8. **Added `HR | DAY | WEEK | RS` to shared interactive charts.** The chart disables weekly
    aggregation and RS overlays in intraday mode, converts timestamps correctly, and
    displays the provider plus actual latest-bar time.
 9. **Protected the provider and backend.** Intraday responses use a 60-second Redis
@@ -145,5 +145,5 @@ does not claim a clean repository-wide suite where one does not exist.
 - **Not current capability:** exchange-grade real-time streaming quotes.
 - **How to judge a chart:** read the `Data through` label. The page load time only says
   when the cache was read; it does not say when the market bar was produced.
-- **How to use intraday:** select `HOURLY` and read the `bar <time>` label. It
+- **How to use intraday:** select `HR` and read the `bar <time>` label. It
   identifies the latest provider bar, while `loaded <time>` identifies the request.

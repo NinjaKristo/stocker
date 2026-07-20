@@ -619,16 +619,16 @@ function CandlestickChart({
                 }}
                 size="small"
               >
-                <ToggleButton value="daily">Daily</ToggleButton>
-                <ToggleButton value="weekly">Weekly</ToggleButton>
                 {!priceData && (
                   <ToggleButton
                     value="hourly"
                     title="Delayed hourly bars from Yahoo Finance; not real-time or for order execution"
                   >
-                    Hourly
+                    HR
                   </ToggleButton>
                 )}
+                <ToggleButton value="daily">Day</ToggleButton>
+                <ToggleButton value="weekly">Week</ToggleButton>
               </ToggleButtonGroup>
               {/* RS line overlay toggle — shown only where RS data can load
                   (live charts, or static charts whose bundle carries rs_line). */}
