@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatPriceDate, getLatestPriceDate } from './candlestickData';
+import {
+  chartTimeForPoint,
+  formatPriceDate,
+  formatPriceTimestamp,
+  getLatestPriceDate,
+  transformToCandlestickData,
+} from './candlestickData';
 
 describe('candlestick data freshness label', () => {
   it('uses the newest market-session date instead of response time', () => {
@@ -17,5 +23,22 @@ describe('candlestick data freshness label', () => {
   it('ignores malformed and missing dates', () => {
     expect(getLatestPriceDate([{ date: 'yesterday' }, {}, null])).toBeNull();
     expect(formatPriceDate(null)).toBeNull();
+  });
+});
+
+describe('hourly candlestick data', () => {
+  it('converts offset timestamps to Lightweight Charts UTC seconds', () => {
+    const timestamp = '2026-07-17T15:30:00-04:00';
+    const expected = Math.floor(Date.parse(timestamp) / 1000);
+
+    expect(chartTimeForPoint({ timestamp })).toBe(expected);
+    expect(transformToCandlestickData([
+      { timestamp, open: 100, high: 102, low: 99, close: 101, volume: 1200 },
+    ]).candlesticks[0].time).toBe(expected);
+  });
+
+  it('formats the actual latest hourly bar time', () => {
+    expect(formatPriceTimestamp('not-a-time')).toBeNull();
+    expect(formatPriceTimestamp('2026-07-17T15:30:00-04:00')).toContain('Jul 17');
   });
 });

@@ -17,6 +17,14 @@ export const fetchPriceHistory = async (symbol, period = '6mo') => {
   return response.data;
 };
 
+/** Fetch delayed hourly bars and their provider/freshness metadata. */
+export const fetchIntradayPriceHistory = async (symbol, interval = '60m') => {
+  const response = await apiClient.get(`/v1/stocks/${symbol}/intraday`, {
+    params: { interval },
+  });
+  return response.data;
+};
+
 /**
  * Fetch the RS line (stock / market benchmark) and blue-dot dates for a symbol.
  * @param {string} symbol - Stock symbol
@@ -48,6 +56,7 @@ export const fetchPriceHistoryBatch = async (symbols, period = '6mo') => {
 export const priceHistoryKeys = {
   all: ['priceHistory'],
   symbol: (symbol, period = '6mo') => ['priceHistory', symbol, period],
+  intraday: (symbol, interval = '60m') => ['priceHistory', 'intraday', symbol, interval],
   rsLine: (symbol, period = '6mo') => ['priceHistory', 'rsLine', symbol, period],
   batch: (symbols, period = '6mo') => [
     'priceHistory',
@@ -62,6 +71,7 @@ export const priceHistoryKeys = {
  * Price data doesn't change frequently during market hours
  */
 export const PRICE_HISTORY_STALE_TIME = 300000;
+export const INTRADAY_PRICE_STALE_TIME = 60000;
 
 /**
  * Fetch a batch of symbols and hydrate React Query's per-symbol caches.

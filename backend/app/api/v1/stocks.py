@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from ...database import get_db
 from ...infra.serialization import normalize_string_list
@@ -17,6 +18,7 @@ from ...schemas.scanning import ExplainResponse, ScanResultItem
 from ...schemas.stock import (
     FundamentalsBatchRequest,
     FundamentalsBatchResponse,
+    IntradayPriceResponse,
     PriceHistoryBatchRequest,
     PriceHistoryBatchResponse,
     StockData,
@@ -27,6 +29,11 @@ from ...schemas.stock import (
     StockTechnicals,
 )
 from ...services.stock_event_context_service import StockEventContextService
+from ...services.intraday_price_service import (
+    IntradayPriceService,
+    IntradayPriceUnavailable,
+)
+from ...services.redis_pool import get_redis_client
 from ...services.strategy_profile_service import DEFAULT_PROFILE, StrategyProfileService
 from ...services.price_history_symbols import require_valid_price_history_symbol
 from ...services.symbol_format import require_valid_symbol
@@ -60,6 +67,13 @@ def _get_strategy_profile_service():
 
 def _get_yfinance_service():
     return get_yfinance_service()
+
+
+def _get_intraday_price_service():
+    return IntradayPriceService(
+        yfinance_service=_get_yfinance_service(),
+        redis_client=get_redis_client(),
+    )
 
 
 def _build_data_fetcher(db: Session):
@@ -834,6 +848,25 @@ async def get_price_history(
     period: str = "6mo",
 ):
     return _load_price_history(symbol, period)
+
+
+@router.get("/{symbol}/intraday", response_model=IntradayPriceResponse)
+async def get_intraday_price_history(
+    symbol: str = Depends(require_valid_price_history_symbol),
+    interval: str = Query(default="60m", pattern="^60m$"),
+):
+    """Return delayed hourly bars without mutating the durable daily cache."""
+
+    try:
+        return await run_in_threadpool(
+            _get_intraday_price_service().get,
+            symbol,
+            interval=interval,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntradayPriceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 _BATCH_MAX_SYMBOLS = 100

@@ -13,15 +13,23 @@ export const calculateEMA = (data, period) => {
     ema += data[i].close;
   }
   ema = ema / period;
-  emaData.push({ time: data[period - 1].date, value: ema });
+  emaData.push({ time: chartTimeForPoint(data[period - 1]), value: ema });
 
   // Calculate EMA for remaining data
   for (let i = period; i < data.length; i++) {
     ema = data[i].close * k + ema * (1 - k);
-    emaData.push({ time: data[i].date, value: ema });
+    emaData.push({ time: chartTimeForPoint(data[i]), value: ema });
   }
 
   return emaData;
+};
+
+export const chartTimeForPoint = (point) => {
+  const value = point?.timestamp ?? point?.date;
+  if (typeof value !== 'string') return value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? value : Math.floor(parsed / 1000);
 };
 
 /**
@@ -127,6 +135,19 @@ export const formatPriceDate = (date) => {
   });
 };
 
+export const formatPriceTimestamp = (timestamp) => {
+  if (!timestamp) return null;
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+};
+
 /**
  * Transform API data to TradingView Lightweight Charts format
  */
@@ -142,9 +163,10 @@ export const transformToCandlestickData = (apiData, timeframe = 'daily') => {
   const volume = [];
 
   processedData.forEach((d) => {
+    const time = chartTimeForPoint(d);
     // Candlestick data
     candlesticks.push({
-      time: d.date,
+      time,
       open: d.open,
       high: d.high,
       low: d.low,
@@ -153,7 +175,7 @@ export const transformToCandlestickData = (apiData, timeframe = 'daily') => {
 
     // Volume data
     volume.push({
-      time: d.date,
+      time,
       value: d.volume,
       color: d.close >= d.open ? 'rgba(33, 150, 243, 0.5)' : 'rgba(230, 25, 205, 0.5)',
     });

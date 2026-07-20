@@ -89,6 +89,34 @@ class StockPriceHistoryPoint(BaseModel):
     volume: int
 
 
+class IntradayPriceBar(BaseModel):
+    """Timestamped delayed intraday OHLCV bar."""
+
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class IntradayPriceResponse(BaseModel):
+    """Delayed intraday series with explicit provider and freshness metadata."""
+
+    symbol: str
+    interval: str
+    period: str
+    source: str
+    source_type: str
+    is_realtime: bool
+    disclosure: str
+    fetched_at: str
+    latest_bar_at: str
+    cache_ttl_seconds: int
+    cache_status: str
+    bars: List[IntradayPriceBar]
+
+
 class PriceHistoryBatchRequest(BaseModel):
     """Request body for the multi-symbol price history endpoint."""
 
